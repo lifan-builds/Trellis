@@ -364,7 +364,7 @@ describe("ablation-store", () => {
     verifyRestoredState(transaction);
   });
 
-  it("cleans an atomic restore temp file after an injected rename failure", () => {
+  it("cleans an atomic restore temp file after an injected publish failure", () => {
     const transaction = stage();
     removeManagedState();
     transitionAblationState(transaction, "applied");
@@ -373,13 +373,44 @@ describe("ablation-store", () => {
       fs.realpathSync(projectDir),
       "managed.txt",
     );
+    const originalLinkSync = fs.linkSync.bind(fs);
+    vi.spyOn(fs, "linkSync").mockImplementation((source, destination) => {
+      if (destination === canonicalManagedPath) {
+        throw Object.assign(new Error("injected restore publish failure"), {
+          code: "EIO",
+        });
+      }
+      return originalLinkSync(source, destination);
+    });
+
+    expect(() => restoreAblationTransaction(transaction)).toThrow(
+      /injected restore publish failure/,
+    );
+    expect(transaction.state.status).toBe("restoring");
+    expect(fs.existsSync(managedPath)).toBe(false);
+    expect(
+      fs
+        .readdirSync(projectDir)
+        .filter((name) => name.endsWith(".restore.tmp")),
+    ).toEqual([]);
+
+    vi.restoreAllMocks();
+    restoreAblationTransaction(transaction);
+    verifyRestoredState(transaction);
+  });
+
+  it("cleans a prepared directory after an injected atomic publish failure", () => {
+    const transaction = stage();
+    removeManagedState();
+    transitionAblationState(transaction, "applied");
+    const trellisPath = path.join(fs.realpathSync(projectDir), ".trellis");
     const originalRenameSync = fs.renameSync.bind(fs);
     vi.spyOn(fs, "renameSync").mockImplementation((source, destination) => {
       if (
-        destination === canonicalManagedPath &&
+        destination === trellisPath &&
         String(source).endsWith(".restore.tmp")
       ) {
-        throw Object.assign(new Error("injected restore rename failure"), {
+        throw Object.assign(new Error("injected directory publish failure"), {
           code: "EIO",
         });
       }
@@ -387,10 +418,10 @@ describe("ablation-store", () => {
     });
 
     expect(() => restoreAblationTransaction(transaction)).toThrow(
-      /injected restore rename failure/,
+      /injected directory publish failure/,
     );
     expect(transaction.state.status).toBe("restoring");
-    expect(fs.existsSync(managedPath)).toBe(false);
+    expect(fs.existsSync(trellisPath)).toBe(false);
     expect(
       fs
         .readdirSync(projectDir)

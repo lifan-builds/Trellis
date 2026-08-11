@@ -95,7 +95,9 @@ The command never stages, commits, or hides Git changes.
    pre-fingerprints. Regular files are prepared with their final mode in a
    same-directory temporary file, rechecked immediately before replacement,
    and installed by atomic rename; failure removes the temporary file while
-   retaining the retryable `restoring` state.
+   retaining the retryable `restoring` state. Deleted files and symlinks use
+   exclusive publication, while directories are fully prepared beside the
+   destination and atomically renamed so no partial tree is exposed.
 6. Release the lock on every success and failure path. Delete the transaction
    only after complete verification; retain it on any failure.
 

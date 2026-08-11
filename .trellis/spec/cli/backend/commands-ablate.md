@@ -209,10 +209,20 @@ The command never stages, commits, or hides Git changes.
    same-directory temporary file, re-fingerprint the target immediately before
    replacement, and atomically rename the prepared file into place. A changed
    target becomes a conflict without overwriting it.
-6. Copy non-file backup paths without dereferencing links, restore exact modes,
-   and verify every pre-fingerprint. A write/rename failure cleans temporary
-   files and retains `restoring` so exact endpoint states remain retryable.
+6. Publish deleted regular files with an exclusive hard link and deleted
+   symlinks with exclusive creation, so a target recreated after validation is
+   never overwritten. Prepare directories beside their destination and rename
+   them into place rather than copying a visible partial tree. Restore exact
+   modes and verify every pre-fingerprint. A write/rename failure cleans
+   temporary paths and retains `restoring` so exact endpoint states remain
+   retryable.
 7. Delete the external transaction only after complete verification.
+
+The reservation serializes Trellis operations, not arbitrary external editors.
+Callers must keep the affected managed paths quiescent during restore. The
+immediate per-path recheck detects changes before publication and final
+verification detects changes afterward; portable Node filesystems do not offer
+an atomic content-fingerprint compare-and-swap for an existing mixed file.
 
 PR 1 performs no three-way merge. Users resolve a conflict by returning the
 reported path to its expected ablated state and rerunning `trellis restore`.

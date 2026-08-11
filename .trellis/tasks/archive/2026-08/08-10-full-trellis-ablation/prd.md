@@ -68,6 +68,11 @@ Related proposal: [#530](https://github.com/mindfold-ai/Trellis/issues/530).
 - Recheck each restore target immediately before replacement. Restore regular
   files through a same-directory prepared temporary file and atomic rename;
   injected failures must clean temporary files and remain retryable.
+- Require affected managed paths to remain quiescent during restore: the
+  project reservation serializes Trellis commands but cannot lock arbitrary
+  external editors. Use exclusive publication for absent file/symlink targets,
+  prepared-directory rename, and final verification to avoid partial state and
+  detect boundary violations.
 - With no conflicts, restore exact bytes/link identity/relevant modes and
   verify all pre-state fingerprints before deleting the external backup.
 - Missing install prints `Trellis is not installed in this project.` and exits

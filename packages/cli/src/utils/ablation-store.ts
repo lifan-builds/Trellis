@@ -765,7 +765,26 @@ function restoreEntry(
           ]);
         }
       }
-      fs.renameSync(tempPath, destination);
+      if (entry.expectedAblated.kind === "absent") {
+        if (!verifyExpectedState) removePath(destination);
+        try {
+          fs.linkSync(tempPath, destination);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+            throw new AblationConflictError([
+              {
+                relativePath: entry.relativePath,
+                expected: entry.expectedAblated,
+                actual: fingerprintPath(destination),
+              },
+            ]);
+          }
+          throw error;
+        }
+        fs.unlinkSync(tempPath);
+      } else {
+        fs.renameSync(tempPath, destination);
+      }
     } catch (error) {
       try {
         fs.unlinkSync(tempPath);
@@ -776,6 +795,37 @@ function restoreEntry(
             `Restore failed and temporary-file cleanup also failed: ${entry.relativePath}`,
           );
         }
+      }
+      throw error;
+    }
+    return;
+  }
+
+  if (entry.pre.kind === "symlink" && entry.expectedAblated.kind === "absent") {
+    if (verifyExpectedState) {
+      const beforeCreate = fingerprintPath(destination);
+      if (!fingerprintsEqual(beforeCreate, entry.expectedAblated)) {
+        throw new AblationConflictError([
+          {
+            relativePath: entry.relativePath,
+            expected: entry.expectedAblated,
+            actual: beforeCreate,
+          },
+        ]);
+      }
+    }
+    if (!verifyExpectedState) removePath(destination);
+    try {
+      fs.symlinkSync(entry.pre.target, destination);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new AblationConflictError([
+          {
+            relativePath: entry.relativePath,
+            expected: entry.expectedAblated,
+            actual: fingerprintPath(destination),
+          },
+        ]);
       }
       throw error;
     }
@@ -794,8 +844,43 @@ function restoreEntry(
       ]);
     }
   }
-  removePath(destination);
-  copyPath(source, destination, false);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  const tempPath = path.join(
+    path.dirname(destination),
+    `.${path.basename(destination)}.${process.pid}.${randomUUID()}.restore.tmp`,
+  );
+  try {
+    copyPath(source, tempPath, false);
+    if (verifyExpectedState) {
+      const beforeReplace = fingerprintPath(destination);
+      if (!fingerprintsEqual(beforeReplace, entry.expectedAblated)) {
+        throw new AblationConflictError([
+          {
+            relativePath: entry.relativePath,
+            expected: entry.expectedAblated,
+            actual: beforeReplace,
+          },
+        ]);
+      }
+    }
+    if (!verifyExpectedState) removePath(destination);
+    fs.renameSync(tempPath, destination);
+  } catch (error) {
+    removePath(tempPath);
+    if (verifyExpectedState) {
+      const afterFailure = fingerprintPath(destination);
+      if (!fingerprintsEqual(afterFailure, entry.expectedAblated)) {
+        throw new AblationConflictError([
+          {
+            relativePath: entry.relativePath,
+            expected: entry.expectedAblated,
+            actual: afterFailure,
+          },
+        ]);
+      }
+    }
+    throw error;
+  }
 }
 
 /** Restore exact backup bytes/link identity/modes without running preflight. */
