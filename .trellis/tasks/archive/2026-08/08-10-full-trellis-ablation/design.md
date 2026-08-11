@@ -69,7 +69,11 @@ preflight to fail; it must not remain active behind a success message.
 6. Atomically rewrite mixed files, unlink opaque entries, remove `.trellis`,
    and prune only empty managed directories.
 7. Verify every expected ablated fingerprint.
-8. On failure attempt exact rollback; retain state when recovery is incomplete.
+8. On failure, acquire the project recovery lock and attempt exact rollback.
+   Delete the transaction after the pre-state verifies; if recovery or
+   verification fails, retain the transaction in its crash-recoverable
+   `preparing`/`restoring` status for a later retry rather than discarding the
+   endpoint-fingerprint relaxation.
 9. Mark `applied` and instruct the user to start a fresh agent session.
 
 The command never stages, commits, or hides Git changes.
@@ -78,13 +82,16 @@ The command never stages, commits, or hides Git changes.
 
 1. Locate and strictly parse state from canonical cwd.
 2. No state is a friendly no-op. `--dry-run` reports without writing.
-3. Compare all current paths against expected ablated fingerprints before any
-   write.
-4. Any mismatch records/reports conflict and restores zero paths.
-5. Otherwise mark `restoring`, recreate exact pre-state content/link/modes,
-   restore `.trellis`, and verify all pre-fingerprints.
-6. Delete the transaction only after complete verification. Retain it on any
-   failure.
+3. Acquire a per-project external lock, then re-fingerprint every affected path
+   while holding that lock.
+4. Any mismatch reports conflict and restores zero paths. Preserve
+   `preparing`/`restoring` on crash-recovery records; otherwise record
+   `conflict`.
+5. Otherwise, while still holding the lock, mark `restoring`, recreate exact
+   pre-state content/link/modes, restore `.trellis`, and verify all
+   pre-fingerprints.
+6. Release the lock on every success and failure path. Delete the transaction
+   only after complete verification; retain it on any failure.
 
 PR 1 performs no three-way merge; conflict refusal protects user edits.
 

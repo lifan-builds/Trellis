@@ -70,7 +70,11 @@ function getEntryCommand(entry: unknown): string | null {
 
 const CLAUDE_TRELLIS_STATUSLINE = ".claude/hooks/statusline.py";
 
-function isTrellisClaudeStatusLine(value: unknown): boolean {
+function isTrellisClaudeStatusLine(
+  value: unknown,
+  deletedPaths: readonly string[],
+): boolean {
+  if (!deletedPaths.includes(CLAUDE_TRELLIS_STATUSLINE)) return false;
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
@@ -111,7 +115,7 @@ export function scrubHooksJson(
   }
 
   const root = parsed as Record<string, unknown>;
-  if (isTrellisClaudeStatusLine(root.statusLine)) {
+  if (isTrellisClaudeStatusLine(root.statusLine, deletedPaths)) {
     delete root.statusLine;
   }
   const hooks = root.hooks;
@@ -397,9 +401,10 @@ export function scrubCodexConfigToml(content: string): ScrubResult {
 
     const tableLines: string[] = [];
     let cursor = index + 1;
+    const tableHeader = /^\s*\[\[?[^\]]+\]\]?\s*$/;
     while (
       cursor < filteredLines.length &&
-      !/^\s*\[[^\]]+\]\s*$/.test(filteredLines[cursor] ?? "")
+      !tableHeader.test(filteredLines[cursor] ?? "")
     ) {
       const candidate = filteredLines[cursor] ?? "";
       if (!/^\s*max_depth\s*=\s*1\s*(?:#.*)?$/.test(candidate)) {

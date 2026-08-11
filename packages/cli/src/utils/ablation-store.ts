@@ -1,9 +1,11 @@
 /**
  * External, versioned recovery storage for reversible full Trellis ablation.
  *
- * The store intentionally contains only Trellis-owned project paths and the
- * `.trellis/` tree. It never reads or records prompts, agent transcripts,
- * channel logs, credentials, or unrelated application files.
+ * The store intentionally contains only manifest-owned project paths and the
+ * exact `.trellis/` tree. User-authored task/spec/workspace files may contain
+ * sensitive text, so the state root is private and retained only until a
+ * verified restore. Unrelated application files and global host state are
+ * never copied.
  */
 
 import { createHash } from "node:crypto";
@@ -80,6 +82,7 @@ export interface TransactionPaths {
   transactionDir: string;
   stateFile: string;
   backupDir: string;
+  lockFile: string;
 }
 
 export interface StagedAblationInput {
@@ -92,6 +95,13 @@ export interface StagedAblationInput {
 export interface LoadedAblationTransaction {
   paths: TransactionPaths;
   state: AblationStateV1;
+}
+
+export interface RestoreAblationOptions {
+  /** Only preflight; do not transition state or restore/delete any path. */
+  dryRun?: boolean;
+  /** Delete the external transaction after verified restoration. */
+  deleteAfterRestore?: boolean;
 }
 
 export interface AblationConflict {
@@ -155,7 +165,7 @@ const ablationStateSchema = z
     projectKey: z.string().regex(/^[a-f0-9]{64}$/),
     trellisVersion: z.string().min(1),
     capabilities: z.tuple([z.literal(FULL_ABLATION_CAPABILITY)]),
-    createdAt: z.string().datetime(),
+    createdAt: z.iso.datetime(),
     configuredPlatforms: z.array(z.string()),
     manifest: z.record(z.string(), z.string()),
     entries: z.array(ablationEntrySchema).min(1),
@@ -239,7 +249,24 @@ export function fingerprintsEqual(
   left: PathFingerprint,
   right: PathFingerprint,
 ): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "absent" && right.kind === "absent") return true;
+  if (left.kind === "symlink" && right.kind === "symlink") {
+    return left.target === right.target && left.mode === right.mode;
+  }
+  if (left.kind === "file" && right.kind === "file") {
+    return (
+      left.sha256 === right.sha256 &&
+      left.size === right.size &&
+      left.mode === right.mode
+    );
+  }
+  return (
+    left.kind === "directory" &&
+    right.kind === "directory" &&
+    left.sha256 === right.sha256 &&
+    left.mode === right.mode
+  );
 }
 
 export function canonicalProjectRoot(cwd: string): string {
@@ -258,16 +285,20 @@ export function getAblationStateRoot(): string {
   return path.join(os.homedir(), ".trellis", "ablations", "v1");
 }
 
-export function getTransactionPaths(projectRoot: string): TransactionPaths {
+export function getTransactionPaths(
+  projectRoot: string,
+  stateRoot = getAblationStateRoot(),
+): TransactionPaths {
   const canonical = canonicalProjectRoot(projectRoot);
+  assertExternalStateRoot(canonical, stateRoot);
   const key = projectKey(canonical);
-  const stateRoot = getAblationStateRoot();
   const transactionDir = path.join(stateRoot, key);
   return {
     stateRoot,
     transactionDir,
     stateFile: path.join(transactionDir, "state.json"),
     backupDir: path.join(transactionDir, "backup"),
+    lockFile: path.join(stateRoot, `${key}.lock`),
   };
 }
 
@@ -306,7 +337,10 @@ function isWithinPath(parent: string, candidate: string): boolean {
   );
 }
 
-function assertExternalStateRoot(projectRoot: string, stateRoot: string): void {
+export function assertExternalStateRoot(
+  projectRoot: string,
+  stateRoot: string,
+): void {
   const projectedStateRoot = projectedCanonicalPath(stateRoot);
   if (isWithinPath(projectRoot, projectedStateRoot)) {
     throw new Error(
@@ -436,8 +470,9 @@ export function stageAblationTransaction(
   input: StagedAblationInput,
 ): LoadedAblationTransaction {
   const projectRoot = canonicalProjectRoot(input.projectRoot);
-  const paths = getTransactionPaths(projectRoot);
-  assertExternalStateRoot(projectRoot, paths.stateRoot);
+  const stateRoot = getAblationStateRoot();
+  assertExternalStateRoot(projectRoot, stateRoot);
+  const paths = getTransactionPaths(projectRoot, stateRoot);
   if (lstatIfPresent(paths.transactionDir)) {
     throw new Error(
       "An ablation transaction already exists for this project. Run `trellis restore` first.",
@@ -473,6 +508,7 @@ export function stageAblationTransaction(
     transactionDir: tempDir,
     stateFile: path.join(tempDir, "state.json"),
     backupDir: path.join(tempDir, "backup"),
+    lockFile: paths.lockFile,
   };
 
   ensurePrivateDirectory(tempPaths.transactionDir);
@@ -507,10 +543,11 @@ export function stageAblationTransaction(
 
 export function loadAblationTransaction(
   projectRoot: string,
+  stateRoot = getAblationStateRoot(),
 ): LoadedAblationTransaction | null {
   const canonical = canonicalProjectRoot(projectRoot);
-  const paths = getTransactionPaths(canonical);
-  assertExternalStateRoot(canonical, paths.stateRoot);
+  assertExternalStateRoot(canonical, stateRoot);
+  const paths = getTransactionPaths(canonical, stateRoot);
   if (!lstatIfPresent(paths.stateFile)) return null;
 
   let raw: unknown;
@@ -554,6 +591,61 @@ function currentPathForEntry(
 
 function mayAlreadyBeRestored(state: AblationStateV1): boolean {
   return state.status === "preparing" || state.status === "restoring";
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function acquireProjectLock(paths: TransactionPaths): void {
+  ensurePrivateDirectory(paths.stateRoot);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const fd = fs.openSync(paths.lockFile, "wx", 0o600);
+      try {
+        fs.writeSync(fd, String(process.pid));
+      } finally {
+        fs.closeSync(fd);
+      }
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+
+    let holderPid = 0;
+    try {
+      holderPid = Number(fs.readFileSync(paths.lockFile, "utf-8").trim());
+    } catch {
+      continue;
+    }
+    if (holderPid && pidAlive(holderPid)) {
+      throw new Error(
+        `Another Trellis restore is already in progress for this project (pid ${holderPid}).`,
+      );
+    }
+    try {
+      fs.unlinkSync(paths.lockFile);
+    } catch {
+      // A concurrent process changed the lock; retry the atomic create once.
+    }
+  }
+  throw new Error("Unable to acquire the Trellis restore lock; retry restore.");
+}
+
+function releaseProjectLock(paths: TransactionPaths): void {
+  try {
+    const holder = fs.readFileSync(paths.lockFile, "utf-8").trim();
+    if (holder === String(process.pid)) {
+      fs.unlinkSync(paths.lockFile);
+    }
+  } catch {
+    // Already released or replaced by another process.
+  }
 }
 
 /** Preflight every affected path before restore writes anything. */
@@ -647,16 +739,66 @@ export function verifyAblatedState(
 /** Conflict-safe exact restore. Any mismatch causes zero project writes. */
 export function restoreAblationTransaction(
   transaction: LoadedAblationTransaction,
+  options: RestoreAblationOptions = {},
 ): void {
-  const conflicts = collectRestoreConflicts(transaction);
-  if (conflicts.length > 0) {
-    transitionAblationState(transaction, "conflict");
-    throw new AblationConflictError(conflicts);
-  }
+  const projectRoot = canonicalProjectRoot(transaction.state.projectRoot);
+  const paths = getTransactionPaths(projectRoot, transaction.paths.stateRoot);
+  acquireProjectLock(paths);
+  try {
+    const reloaded = loadAblationTransaction(projectRoot, paths.stateRoot);
+    if (!reloaded) {
+      throw new Error(
+        "Ablation transaction disappeared before restore could begin.",
+      );
+    }
+    transaction.paths = reloaded.paths;
+    transaction.state = reloaded.state;
 
-  transitionAblationState(transaction, "restoring");
-  restoreTransactionFiles(transaction);
-  verifyRestoredState(transaction);
+    const conflicts = collectRestoreConflicts(transaction);
+    if (conflicts.length > 0) {
+      if (!options.dryRun && !mayAlreadyBeRestored(transaction.state)) {
+        transitionAblationState(transaction, "conflict");
+      }
+      throw new AblationConflictError(conflicts);
+    }
+
+    if (options.dryRun) return;
+
+    transitionAblationState(transaction, "restoring");
+    restoreTransactionFiles(transaction);
+    verifyRestoredState(transaction);
+    if (options.deleteAfterRestore) deleteAblationTransaction(transaction);
+  } finally {
+    releaseProjectLock(paths);
+  }
+}
+
+/** Roll back this process's partial ablation while holding the project lock. */
+export function rollbackAblationTransaction(
+  transaction: LoadedAblationTransaction,
+): void {
+  const projectRoot = canonicalProjectRoot(transaction.state.projectRoot);
+  const paths = getTransactionPaths(projectRoot, transaction.paths.stateRoot);
+  acquireProjectLock(paths);
+  try {
+    const reloaded = loadAblationTransaction(projectRoot, paths.stateRoot);
+    if (!reloaded) {
+      throw new Error(
+        "Ablation transaction disappeared before rollback could begin.",
+      );
+    }
+    transaction.paths = reloaded.paths;
+    transaction.state = reloaded.state;
+
+    // This process is unwinding its own partially applied plan. A parent
+    // directory can temporarily match neither endpoint fingerprint, so normal
+    // user-restore conflict preflight is intentionally not used here.
+    restoreTransactionFiles(transaction);
+    verifyRestoredState(transaction);
+    deleteAblationTransaction(transaction);
+  } finally {
+    releaseProjectLock(paths);
+  }
 }
 
 export function deleteAblationTransaction(

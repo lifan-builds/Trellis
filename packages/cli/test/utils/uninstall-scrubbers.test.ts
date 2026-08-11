@@ -21,6 +21,7 @@ const CLAUDE_DELETE_PATHS = [
   ".claude/hooks/session-start.py",
   ".claude/hooks/inject-subagent-context.py",
   ".claude/hooks/inject-workflow-state.py",
+  ".claude/hooks/statusline.py",
 ];
 
 const CURSOR_DELETE_PATHS = [
@@ -104,6 +105,24 @@ describe("scrubHooksJson — nested schema", () => {
     const { content, fullyEmpty } = scrubHooksJson(
       JSON.stringify(input),
       CLAUDE_DELETE_PATHS,
+      "nested",
+    );
+    expect(JSON.parse(content)).toEqual(input);
+    expect(fullyEmpty).toBe(false);
+  });
+
+  it("preserves the Trellis-shaped statusLine when the manifest does not own it", () => {
+    const input = {
+      statusLine: {
+        type: "command",
+        command: "python3 .claude/hooks/statusline.py",
+      },
+    };
+    const { content, fullyEmpty } = scrubHooksJson(
+      JSON.stringify(input),
+      CLAUDE_DELETE_PATHS.filter(
+        (managedPath) => managedPath !== ".claude/hooks/statusline.py",
+      ),
       "nested",
     );
     expect(JSON.parse(content)).toEqual(input);
@@ -530,6 +549,13 @@ project_doc_fallback_filenames = ["AGENTS.md"]
     expect(content).toContain('user_key = "keep"');
     expect(content).not.toContain("max_depth = 1");
     expect(content).not.toContain("Trellis");
+  });
+
+  it("stops agents cleanup before a user-owned array-of-tables section", () => {
+    const input = `[agents]\nmax_depth = 1\n\n[[agents]]\nname = "user"\nmax_depth = 1\n`;
+    const { content, fullyEmpty } = scrubCodexConfigToml(input);
+    expect(fullyEmpty).toBe(false);
+    expect(content).toBe(`[[agents]]\nname = "user"\nmax_depth = 1\n`);
   });
 
   it("preserves user-added TOML content", () => {

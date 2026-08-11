@@ -23,11 +23,12 @@ also set `codex.dispatch_mode: inline` so neither condition could delegate.
 | Application/test lines | 90 | 81 |
 | Extra workflow artifacts | Task, workspace, config/spec activity | None |
 
-The ablated run completed 184.31 seconds (48.0%) sooner than the fixed control
-cutoff. This single sample does not establish that Trellis makes normal work
-slower: the control spent substantial time satisfying project workflow and
-documenting the learned contract, while the treatment stopped after source,
-tests, and a focused diff review.
+The ablated run completed 184.31 seconds before the fixed control cutoff. The
+control did not naturally complete, so this difference is not a measured
+completion-time speedup. This single sample does not establish that Trellis
+makes normal work slower: the control spent substantial time satisfying project
+workflow and documenting the learned contract, while the treatment stopped
+after source, tests, and a focused diff review.
 
 Both implementations validate before `mkdir`, reject absolute paths, `.`,
 `..`, forward slashes, and backslashes, preserve valid UTF-8/LF output, and

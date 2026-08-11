@@ -28,7 +28,7 @@ import {
   cleanupEmptyDirs,
   TRELLIS_BLOCK_END,
   TRELLIS_BLOCK_START,
-} from "../commands/update.js";
+} from "./managed-paths.js";
 
 export interface StructuredFileSpec {
   /** Manifest path (POSIX). */

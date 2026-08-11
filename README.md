@@ -138,6 +138,9 @@ Yes. `trellis ablate` temporarily removes all supported project-owned Trellis
 surfaces after creating a verified recovery transaction outside the project.
 Start a fresh agent session for the comparison, then run `trellis restore` to
 recover the exact prior state. Use `--dry-run` to preview either operation.
+The private recovery transaction includes exact `.trellis` task, spec, and
+workspace bytes, which may contain user-authored sensitive text, and is kept
+until restore verifies successfully.
 
 This is different from `trellis uninstall` (permanent removal) and
 `TRELLIS_HOOKS=0` (hooks only). Ablation does not launch agents, manage

@@ -138,6 +138,8 @@ Trellis 内部运行一个 4 阶段循环，skill 与子代理均由系统自动
 Trellis 管理的全部项目级表面。请新开一个 agent 会话进行对比；完成后运行
 `trellis restore`，即可精确恢复到消融前的状态。两个命令都支持
 `--dry-run` 预览。
+私有恢复事务会包含 `.trellis` 中 task、spec 和 workspace 的精确字节，
+其中可能有用户编写的敏感文本；事务会保留到恢复完成验证为止。
 
 它不同于永久删除的 `trellis uninstall`，也不同于只关闭 hooks 的
 `TRELLIS_HOOKS=0`。消融不会启动 agent、管理 worktree、隐藏 Git 变更，

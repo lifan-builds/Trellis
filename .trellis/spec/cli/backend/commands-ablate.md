@@ -22,7 +22,10 @@ trellis restore [--dry-run] [-y|--yes]
   mutation.
 - `--yes` skips confirmation. A non-TTY mutation without `--yes` fails closed.
 - Repeated `ablate` never stacks transactions; it directs the user to restore.
-- Missing install/state and repeated successful `restore` are friendly no-ops.
+- Missing install prints `Trellis is not installed in this project.` and exits
+  with status 0 without writes. Missing state and repeated successful restore
+  print `No Trellis ablation transaction exists for this project.` and also
+  exit 0 without writes.
 - Successful ablate/restore tells the user to start a fresh agent session.
 
 This differs from:
@@ -179,7 +182,8 @@ link rather than copying its target.
    and prune predicted empty managed directories.
 7. Verify every expected ablated fingerprint, then atomically mark `applied`.
 8. On apply/verification failure, attempt exact rollback. Delete recovery state
-   only after verified rollback; otherwise retain it as `conflict`.
+   only after verified rollback; otherwise retain a `preparing`/`restoring`
+   status so a retry can safely accept paths already at either exact endpoint.
 
 The command never stages, commits, or hides Git changes.
 
@@ -187,7 +191,9 @@ The command never stages, commits, or hides Git changes.
 
 1. Strictly load state for the canonical current project.
 2. Compare **all** affected paths before the first project write.
-3. Any mismatch marks/reports `conflict` and restores zero paths.
+3. Any mismatch reports `conflict` and restores zero paths. Preserve a
+   `preparing`/`restoring` status when it supplies the endpoint relaxation;
+   otherwise persist `conflict`.
 4. A `preparing` or `restoring` crash record accepts paths already matching
    either pre-state or expected ablated state, enabling interrupted-operation
    recovery without accepting unrelated content.
@@ -200,9 +206,12 @@ reported path to its expected ablated state and rerunning `trellis restore`.
 
 ## Privacy and session boundary
 
-The transaction may contain exact `.trellis/` task/spec/workspace bytes because
-they are required for recovery. It must never include prompts, responses,
-credentials, browser/session state, global channel logs, host transcripts, or
+The transaction contains exact `.trellis/` task/spec/workspace bytes because
+they are required for recovery. Those user-authored files may themselves
+contain prompts, responses, credentials, or other sensitive text; the CLI
+discloses this before mutation, stores the transaction under a private state
+root, and retains it only until verified restore. Ablation does not separately
+collect browser/session state, global channel logs, host transcripts, or
 unrelated application files.
 
 The current agent may already have Trellis instructions in context, so ablation

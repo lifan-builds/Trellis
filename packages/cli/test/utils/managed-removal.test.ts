@@ -41,36 +41,40 @@ describe("managed-removal strict planning", () => {
     ).not.toThrow();
   });
 
-  it("refuses traversal through an external parent symlink", () => {
-    if (process.platform === "win32") return;
-    const external = path.join(tmpDir, "external");
-    const project = path.join(tmpDir, "project");
-    fs.mkdirSync(external);
-    fs.mkdirSync(project);
-    fs.symlinkSync(external, path.join(project, ".codex"));
+  it.skipIf(process.platform === "win32")(
+    "refuses traversal through an external parent symlink",
+    () => {
+      const external = path.join(tmpDir, "external");
+      const project = path.join(tmpDir, "project");
+      fs.mkdirSync(external);
+      fs.mkdirSync(project);
+      fs.symlinkSync(external, path.join(project, ".codex"));
 
-    expect(() => assertSafeManagedPath(project, ".codex/hooks.json")).toThrow(
-      /escapes project root/,
-    );
-  });
+      expect(() => assertSafeManagedPath(project, ".codex/hooks.json")).toThrow(
+        /escapes project root/,
+      );
+    },
+  );
 
-  it("treats a leaf symlink as an opaque deletion", () => {
-    if (process.platform === "win32") return;
-    const target = path.join(tmpDir, "target.json");
-    fs.writeFileSync(target, '{"user":true}\n');
-    fs.mkdirSync(path.join(tmpDir, ".codex"));
-    fs.symlinkSync(target, path.join(tmpDir, ".codex", "hooks.json"));
+  it.skipIf(process.platform === "win32")(
+    "treats a leaf symlink as an opaque deletion",
+    () => {
+      const target = path.join(tmpDir, "target.json");
+      fs.writeFileSync(target, '{"user":true}\n');
+      fs.mkdirSync(path.join(tmpDir, ".codex"));
+      fs.symlinkSync(target, path.join(tmpDir, ".codex", "hooks.json"));
 
-    const plan = buildManagedRemovalPlan(
-      tmpDir,
-      { ".codex/hooks.json": "hash" },
-      { strictPaths: true },
-    );
-    expect(plan.modifications).toEqual([]);
-    expect(plan.deletions).toHaveLength(1);
-    expect(plan.deletions[0]?.missing).toBe(false);
-    expect(fs.readFileSync(target, "utf-8")).toBe('{"user":true}\n');
-  });
+      const plan = buildManagedRemovalPlan(
+        tmpDir,
+        { ".codex/hooks.json": "hash" },
+        { strictPaths: true },
+      );
+      expect(plan.modifications).toEqual([]);
+      expect(plan.deletions).toHaveLength(1);
+      expect(plan.deletions[0]?.missing).toBe(false);
+      expect(fs.readFileSync(target, "utf-8")).toBe('{"user":true}\n');
+    },
+  );
 
   it("fails closed when a malformed mixed file cannot be scrubbed", () => {
     fs.mkdirSync(path.join(tmpDir, ".codex"));

@@ -3,4 +3,4 @@
 {"file":".trellis/spec/cli/backend/uninstall-scrubbers.md","reason":"Verify every mixed-ownership surface is scrubbed without user-content loss."}
 {"file":".trellis/spec/cli/backend/filesystem-safety.md","reason":"Audit atomicity, path containment, backup completeness, symlinks, permissions, and destructive guards."}
 {"file":".trellis/spec/cli/unit-test/conventions.md","reason":"Review test level, failure-before-fix value, coverage, and regression completeness."}
-{"file":".trellis/tasks/08-10-full-trellis-ablation/research/implementation-evidence.md","reason":"Check implementation against the researched architecture and GitNexus risk boundary."}
+{"file":".trellis/tasks/archive/2026-08/08-10-full-trellis-ablation/research/implementation-evidence.md","reason":"Check implementation against the researched architecture and GitNexus risk boundary."}

@@ -126,6 +126,14 @@ describe("ablation-store", () => {
     }
   });
 
+  it("compares fingerprints structurally regardless of property order", () => {
+    const left = expectedFileFingerprint("same\n", 0o640);
+    const right = JSON.parse(
+      `{"mode":${left.mode},"size":${left.size},"sha256":"${left.sha256}","kind":"file"}`,
+    ) as AblationEntry["pre"];
+    expect(fingerprintsEqual(left, right)).toBe(true);
+  });
+
   it("rejects unknown, malformed, and non-strict state schemas", () => {
     expect(() => parseAblationState({ schemaVersion: 99 })).toThrow();
     expect(() =>
@@ -244,6 +252,38 @@ describe("ablation-store", () => {
     expect(fs.readFileSync(path.join(projectDir, "managed.txt"), "utf-8")).toBe(
       "managed\n",
     );
+  });
+
+  it("recovers after a preparing conflict is reverted to pre-state", () => {
+    const transaction = stage();
+    fs.writeFileSync(path.join(projectDir, "managed.txt"), "user edit\n");
+
+    expect(() => restoreAblationTransaction(transaction)).toThrow(
+      AblationConflictError,
+    );
+    expect(transaction.state.status).toBe("preparing");
+
+    fs.writeFileSync(path.join(projectDir, "managed.txt"), "managed\n");
+    restoreAblationTransaction(transaction);
+    verifyRestoredState(transaction);
+  });
+
+  it("refuses a concurrent restore while the project lock is held", () => {
+    const transaction = stage();
+    removeManagedState();
+    transitionAblationState(transaction, "applied");
+    fs.writeFileSync(transaction.paths.lockFile, String(process.pid), {
+      mode: 0o600,
+    });
+
+    expect(() => restoreAblationTransaction(transaction)).toThrow(
+      /restore is already in progress/,
+    );
+    expect(fs.existsSync(path.join(projectDir, "managed.txt"))).toBe(false);
+
+    fs.rmSync(transaction.paths.lockFile);
+    restoreAblationTransaction(transaction);
+    verifyRestoredState(transaction);
   });
 
   it("reports all conflicts and performs zero project writes", () => {

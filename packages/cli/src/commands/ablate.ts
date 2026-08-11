@@ -13,20 +13,18 @@ import {
 import { DIR_NAMES } from "../constants/paths.js";
 import {
   ABLATION_STATE_ROOT_ENV,
-  AblationConflictError,
+  assertExternalStateRoot,
   canonicalProjectRoot,
-  collectRestoreConflicts,
-  deleteAblationTransaction,
   expectedFileFingerprint,
   fingerprintPath,
+  getAblationStateRoot,
   getTransactionPaths,
   loadAblationTransaction,
+  rollbackAblationTransaction,
   restoreAblationTransaction,
-  restoreTransactionFiles,
   stageAblationTransaction,
   transitionAblationState,
   verifyAblatedState,
-  verifyRestoredState,
   type AblationEntry,
   type LoadedAblationTransaction,
   type PathFingerprint,
@@ -126,7 +124,13 @@ function renderAblatePlan(
       ),
     );
   }
-  console.log(chalk.gray(`\nRecovery transaction: ${transactionDir}\n`));
+  console.log(chalk.gray(`\nRecovery transaction: ${transactionDir}`));
+  console.log(
+    chalk.yellow(
+      "Recovery copies exact .trellis task/spec/workspace bytes, which may contain user-authored sensitive text. " +
+        "The private transaction is retained until verified restore.\n",
+    ),
+  );
 }
 
 function renderRestorePlan(transaction: LoadedAblationTransaction): void {
@@ -331,11 +335,14 @@ function rollbackFailedAblation(
   originalError: unknown,
 ): never {
   try {
-    restoreTransactionFiles(transaction);
-    verifyRestoredState(transaction);
-    deleteAblationTransaction(transaction);
+    rollbackAblationTransaction(transaction);
   } catch (rollbackError) {
-    transitionAblationState(transaction, "conflict");
+    if (
+      transaction.state.status !== "preparing" &&
+      transaction.state.status !== "restoring"
+    ) {
+      transitionAblationState(transaction, "conflict");
+    }
     throw new Error(
       `Ablation failed and automatic rollback was incomplete. Recovery state remains at ${transaction.paths.transactionDir}. ` +
         `Original error: ${originalError instanceof Error ? originalError.message : String(originalError)}. ` +
@@ -348,7 +355,9 @@ function rollbackFailedAblation(
 export async function ablate(options: AblateOptions = {}): Promise<void> {
   assertCommandCwd("ablate");
   const projectRoot = canonicalProjectRoot(process.cwd());
-  const transactionPaths = getTransactionPaths(projectRoot);
+  const stateRoot = getAblationStateRoot();
+  assertExternalStateRoot(projectRoot, stateRoot);
+  const transactionPaths = getTransactionPaths(projectRoot, stateRoot);
   if (fs.existsSync(transactionPaths.transactionDir)) {
     throw new Error(
       "This project is already ablated or has an interrupted ablation. Run `trellis restore` first.",
@@ -379,9 +388,18 @@ export async function ablate(options: AblateOptions = {}): Promise<void> {
       chalk.gray(`Pruned ${pruned.length} orphan manifest entries in memory.`),
     );
   }
-  const plan = buildManagedRemovalPlan(projectRoot, prunedManifest, {
-    strictPaths: true,
-  });
+  let plan: ManagedRemovalPlan;
+  try {
+    plan = buildManagedRemovalPlan(projectRoot, prunedManifest, {
+      strictPaths: true,
+    });
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)} ` +
+        "Restore the managed file to its Trellis-generated form or remove its stale manifest entry, then retry.",
+      { cause: error },
+    );
+  }
   const prunableDirectories = collectPrunableDirectories(projectRoot, plan);
   renderAblatePlan(plan, prunableDirectories, transactionPaths.transactionDir);
   if (options.dryRun) {
@@ -439,21 +457,7 @@ export async function restore(options: RestoreOptions = {}): Promise<void> {
     return;
   }
   renderRestorePlan(transaction);
-  const conflicts = collectRestoreConflicts(transaction);
-  if (conflicts.length > 0) {
-    const error = new AblationConflictError(conflicts);
-    if (!options.dryRun) transitionAblationState(transaction, "conflict");
-    throw error;
-  }
-  if (options.dryRun) {
-    console.log(
-      chalk.gray(
-        "Dry run — restoration is conflict-free; no files were modified.",
-      ),
-    );
-    return;
-  }
-  if (!options.yes) {
+  if (!options.dryRun && !options.yes) {
     if (!process.stdin.isTTY) refuseNonInteractivePrompt("restore");
     if (
       !(await promptContinue("Restore the exact pre-ablation Trellis state?"))
@@ -463,9 +467,18 @@ export async function restore(options: RestoreOptions = {}): Promise<void> {
     }
   }
 
-  restoreAblationTransaction(transaction);
-  verifyRestoredState(transaction);
-  deleteAblationTransaction(transaction);
+  restoreAblationTransaction(transaction, {
+    dryRun: options.dryRun,
+    deleteAfterRestore: !options.dryRun,
+  });
+  if (options.dryRun) {
+    console.log(
+      chalk.gray(
+        "Dry run — restoration is conflict-free; no files were modified.",
+      ),
+    );
+    return;
+  }
   console.log(chalk.green("Trellis project state restored exactly."));
   console.log(
     chalk.yellow("Start a fresh agent session to resume with Trellis."),

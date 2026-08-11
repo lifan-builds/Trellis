@@ -21,7 +21,7 @@ Added crash-safe full project ablate/restore, shared uninstall ownership plannin
 
 | Hash | Message |
 |------|---------|
-| `3ea84685` | (see git log) |
+| `3ea84685` | feat(cli): add reversible full Trellis ablation |
 
 ### Status
 

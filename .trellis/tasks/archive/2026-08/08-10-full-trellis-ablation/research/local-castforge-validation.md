@@ -4,13 +4,13 @@ Date: 2026-08-10
 
 Disposable worktrees from CastForge `f9b01de`:
 
-- mechanical: `/Users/lfan/Project/castforge-ablation-mechanical`
-- comparison control: `/Users/lfan/Project/castforge-ablation-control`
-- comparison treatment: `/Users/lfan/Project/castforge-ablation-treatment`
+- mechanical: `<temporary-root>/castforge-ablation-mechanical`
+- comparison control: `<temporary-root>/castforge-ablation-control`
+- comparison treatment: `<temporary-root>/castforge-ablation-treatment`
 
 The canonical CastForge checkout was not modified. Recovery state was isolated
-under `/Users/lfan/Project/castforge-ablation-state` and was empty after the
-final restore.
+under `<temporary-root>/castforge-ablation-state` and was empty after the final
+restore.
 
 ## Mechanical results
 
@@ -28,7 +28,8 @@ final restore.
 - After a second ablation, recreating `AGENTS.md` caused a one-path restore
   conflict. The NUL-delimited Git-status SHA-256 was
   `5c60cd34a3e89e49ac82d3be1baa0cfa5fcf7f03303a479ed8f1656c5652df0c`
-  both before and after the failed restore, proving zero partial project writes.
+  both before and after the failed restore, which is consistent with zero
+  partial project writes but is not per-path byte/type/mode proof.
 - Removing the conflicting file allowed exact restore; the transaction was
   deleted only after verification and the worktree was clean.
 

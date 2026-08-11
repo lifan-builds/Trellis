@@ -44,8 +44,13 @@ Related proposal: [#530](https://github.com/mindfold-ai/Trellis/issues/530).
 - Complete and verify the snapshot before project mutation. Persist transaction
   transitions atomically and use restrictive permissions where supported.
 - Support one active transaction per project. Repeated ablate must not stack.
-- Never store prompts, responses, credentials, browser/session state, channel
-  logs, or unrelated project files.
+- Limit the recovery payload to exact manifest-owned paths and the complete
+  `.trellis/` tree required for restoration. Because user-authored
+  task/spec/workspace files can themselves contain prompts, responses, or
+  credentials, disclose that risk, protect the state root with restrictive
+  permissions, and retain it only until verified restore. Do not separately
+  collect host transcripts, browser/session state, global channel logs, or
+  unrelated application files.
 
 ### Apply and restore safety
 
@@ -59,7 +64,10 @@ Related proposal: [#530](https://github.com/mindfold-ai/Trellis/issues/530).
   recreation while ablated causes a zero-write conflict refusal.
 - With no conflicts, restore exact bytes/link identity/relevant modes and
   verify all pre-state fingerprints before deleting the external backup.
-- Missing install/state and repeated restore are friendly no-ops where safe.
+- Missing install prints `Trellis is not installed in this project.` and exits
+  successfully without project or recovery writes. Missing recovery state and
+  repeated restore print `No Trellis ablation transaction exists for this
+  project.` and likewise exit successfully without writes.
 
 ### Behavioral boundary
 

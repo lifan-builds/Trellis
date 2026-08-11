@@ -36,11 +36,16 @@ describe("ablate()/restore() integration", () => {
   let projectDir: string;
   let stateRoot: string;
   let originalStateRoot: string | undefined;
+  let originalStdinIsTtyDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-ablate-int-"));
     stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-ablate-state-"));
     originalStateRoot = process.env[ABLATION_STATE_ROOT_ENV];
+    originalStdinIsTtyDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
     process.env[ABLATION_STATE_ROOT_ENV] = stateRoot;
     vi.spyOn(process, "cwd").mockReturnValue(projectDir);
     vi.spyOn(console, "log").mockImplementation(noop);
@@ -54,6 +59,15 @@ describe("ablate()/restore() integration", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    if (originalStdinIsTtyDescriptor) {
+      Object.defineProperty(
+        process.stdin,
+        "isTTY",
+        originalStdinIsTtyDescriptor,
+      );
+    } else {
+      Reflect.deleteProperty(process.stdin, "isTTY");
+    }
     if (originalStateRoot === undefined) {
       Reflect.deleteProperty(process.env, ABLATION_STATE_ROOT_ENV);
     } else {
@@ -74,6 +88,14 @@ describe("ablate()/restore() integration", () => {
 
   it("#1 performs a complete exact round trip while preserving user neighbors", async () => {
     await initialize();
+    const sensitiveTask = path.join(
+      projectDir,
+      ".trellis",
+      "tasks",
+      "private-context.md",
+    );
+    fs.mkdirSync(path.dirname(sensitiveTask), { recursive: true });
+    fs.writeFileSync(sensitiveTask, "user-authored recovery text\n");
     const userNeighbor = path.join(projectDir, ".codex", "user-note.txt");
     fs.writeFileSync(userNeighbor, "mine\n");
     fs.appendFileSync(path.join(projectDir, "AGENTS.md"), "\nUser footer\n");
@@ -86,9 +108,26 @@ describe("ablate()/restore() integration", () => {
     ).toBe("unchanged\n");
     expect(fs.readFileSync(userNeighbor, "utf-8")).toBe("mine\n");
     expect(fs.existsSync(getTransactionPaths(projectDir).stateFile)).toBe(true);
+    expect(
+      fs.readFileSync(
+        path.join(
+          getTransactionPaths(projectDir).backupDir,
+          ".trellis",
+          "tasks",
+          "private-context.md",
+        ),
+        "utf-8",
+      ),
+    ).toBe("user-authored recovery text\n");
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("may contain user-authored sensitive text"),
+    );
 
     await restore({ yes: true });
     expect(projectFingerprint()).toEqual(before);
+    expect(fs.readFileSync(sensitiveTask, "utf-8")).toBe(
+      "user-authored recovery text\n",
+    );
     expect(fs.existsSync(getTransactionPaths(projectDir).transactionDir)).toBe(
       false,
     );
@@ -164,34 +203,47 @@ describe("ablate()/restore() integration", () => {
     expect(fs.existsSync(path.join(projectDir, ".trellis"))).toBe(true);
   });
 
-  it("#7 refuses parent-symlink traversal without touching the target", async () => {
-    if (process.platform === "win32") return;
-    await init({ yes: true, codex: true, force: true });
-    const originalCodex = path.join(projectDir, ".codex");
-    const externalCodex = fs.mkdtempSync(
-      path.join(os.tmpdir(), "trellis-ablate-external-"),
-    );
-    fs.cpSync(originalCodex, externalCodex, { recursive: true });
-    fs.rmSync(originalCodex, { recursive: true });
-    fs.symlinkSync(externalCodex, originalCodex);
-    const externalBefore = fingerprintPath(externalCodex);
-
-    try {
-      await expect(ablate({ yes: true })).rejects.toThrow(
-        /escapes project root/,
+  it.skipIf(process.platform === "win32")(
+    "#7 refuses parent-symlink traversal without touching the target",
+    async () => {
+      await init({ yes: true, codex: true, force: true });
+      const originalCodex = path.join(projectDir, ".codex");
+      const externalCodex = fs.mkdtempSync(
+        path.join(os.tmpdir(), "trellis-ablate-external-"),
       );
-      expect(fingerprintPath(externalCodex)).toEqual(externalBefore);
-      expect(
-        fs.existsSync(getTransactionPaths(projectDir).transactionDir),
-      ).toBe(false);
-    } finally {
-      fs.rmSync(externalCodex, { recursive: true, force: true });
-    }
-  });
+      fs.cpSync(originalCodex, externalCodex, { recursive: true });
+      fs.rmSync(originalCodex, { recursive: true });
+      fs.symlinkSync(externalCodex, originalCodex);
+      const externalBefore = fingerprintPath(externalCodex);
+
+      try {
+        await expect(ablate({ yes: true })).rejects.toThrow(
+          /escapes project root/,
+        );
+        expect(fingerprintPath(externalCodex)).toEqual(externalBefore);
+        expect(
+          fs.existsSync(getTransactionPaths(projectDir).transactionDir),
+        ).toBe(false);
+      } finally {
+        fs.rmSync(externalCodex, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("#8 no install and no recovery state are friendly no-ops", async () => {
+    vi.mocked(console.log).mockClear();
     await ablate({ yes: true });
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("Trellis is not installed in this project."),
+    );
+
+    vi.mocked(console.log).mockClear();
     await restore({ yes: true });
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "No Trellis ablation transaction exists for this project.",
+      ),
+    );
     expect(fs.readdirSync(projectDir)).toEqual([]);
   });
 
@@ -209,31 +261,33 @@ describe("ablate()/restore() integration", () => {
     expect(inquirer.prompt).not.toHaveBeenCalled();
   });
 
-  it("#10 apply failure rolls back exactly and removes the unused transaction", async () => {
-    if (process.platform === "win32") return;
-    await init({ yes: true, codex: true, force: true });
-    const blockedRelative = Object.keys(loadHashes(projectDir)).find((entry) =>
-      entry.startsWith(".codex/hooks/"),
-    );
-    if (!blockedRelative) {
-      throw new Error("Test fixture requires a managed Codex hook file");
-    }
-    const blockedParent = path.dirname(
-      path.join(projectDir, ...blockedRelative.split("/")),
-    );
-    fs.chmodSync(blockedParent, 0o500);
-    const before = projectFingerprint();
+  it.skipIf(process.platform === "win32")(
+    "#10 apply failure rolls back exactly and removes the unused transaction",
+    async () => {
+      await init({ yes: true, codex: true, force: true });
+      const blockedRelative = Object.keys(loadHashes(projectDir)).find(
+        (entry) => entry.startsWith(".codex/hooks/"),
+      );
+      if (!blockedRelative) {
+        throw new Error("Test fixture requires a managed Codex hook file");
+      }
+      const blockedParent = path.dirname(
+        path.join(projectDir, ...blockedRelative.split("/")),
+      );
+      fs.chmodSync(blockedParent, 0o500);
+      const before = projectFingerprint();
 
-    try {
-      await expect(ablate({ yes: true })).rejects.toThrow();
-      expect(projectFingerprint()).toEqual(before);
-      expect(
-        fs.existsSync(getTransactionPaths(projectDir).transactionDir),
-      ).toBe(false);
-    } finally {
-      fs.chmodSync(blockedParent, 0o700);
-    }
-  });
+      try {
+        await expect(ablate({ yes: true })).rejects.toThrow();
+        expect(projectFingerprint()).toEqual(before);
+        expect(
+          fs.existsSync(getTransactionPaths(projectDir).transactionDir),
+        ).toBe(false);
+      } finally {
+        fs.chmodSync(blockedParent, 0o700);
+      }
+    },
+  );
 
   it("#11 restore cancellation keeps the ablated project and transaction", async () => {
     await initialize();
@@ -253,15 +307,41 @@ describe("ablate()/restore() integration", () => {
       configurable: true,
       value: false,
     });
-    const exitSpy = vi
-      .spyOn(process, "exit")
-      .mockImplementation(((code?: number) => {
-        throw new Error(`process.exit(${code ?? 0})`);
-      }) as never);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number,
+    ) => {
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as never);
 
     await expect(restore({})).rejects.toThrow("process.exit(1)");
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(fs.existsSync(path.join(projectDir, ".trellis"))).toBe(false);
     expect(fs.existsSync(getTransactionPaths(projectDir).stateFile)).toBe(true);
+  });
+
+  it("#13 strict planner failures include recovery guidance", async () => {
+    await initialize();
+    fs.writeFileSync(path.join(projectDir, ".codex", "hooks.json"), "{\n");
+
+    await expect(ablate({ yes: true })).rejects.toThrow(
+      /Restore the managed file.*stale manifest entry/,
+    );
+    expect(fs.existsSync(getTransactionPaths(projectDir).transactionDir)).toBe(
+      false,
+    );
+  });
+
+  it("#14 rejects an in-project recovery root before state lookup", async () => {
+    const invalidStateRoot = path.join(projectDir, "recovery");
+    process.env[ABLATION_STATE_ROOT_ENV] = invalidStateRoot;
+
+    await expect(ablate({ yes: true })).rejects.toThrow(
+      /must point outside the project/,
+    );
+    await expect(restore({ yes: true })).rejects.toThrow(
+      /must point outside the project/,
+    );
+    expect(fs.existsSync(invalidStateRoot)).toBe(false);
+    expect(fs.readdirSync(projectDir)).toEqual([]);
   });
 });

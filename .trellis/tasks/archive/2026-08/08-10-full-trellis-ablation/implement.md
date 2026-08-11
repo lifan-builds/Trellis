@@ -34,7 +34,7 @@ pnpm --filter @mindfoldhq/trellis test -- test/utils/uninstall-scrubbers.test.ts
 pnpm --filter @mindfoldhq/trellis test -- test/commands/uninstall.integration.test.ts
 pnpm --filter @mindfoldhq/trellis test -- test/commands/uninstall-dirty-guard.integration.test.ts
 pnpm --filter @mindfoldhq/trellis test -- test/commands/init-uninstall-overdelete.integration.test.ts
-pnpm --filter @mindfoldhq/trellis test -- <new ablation tests>
+pnpm --filter @mindfoldhq/trellis test -- test/utils/ablation-store.test.ts test/commands/ablate.integration.test.ts
 pnpm lint
 pnpm typecheck
 pnpm test:cli
