@@ -44,6 +44,9 @@ Related proposal: [#530](https://github.com/mindfold-ai/Trellis/issues/530).
 - Complete and verify the snapshot before project mutation. Persist transaction
   transitions atomically and use restrictive permissions where supported.
 - Support one active transaction per project. Repeated ablate must not stack.
+- Reserve the project atomically before snapshot creation and hold the shared
+  ablate/restore reservation through staging, mutation/rollback, verification,
+  and state transition so concurrent invocations cannot overlap.
 - Limit the recovery payload to exact manifest-owned paths and the complete
   `.trellis/` tree required for restoration. Because user-authored
   task/spec/workspace files can themselves contain prompts, responses, or
@@ -62,6 +65,9 @@ Related proposal: [#530](https://github.com/mindfold-ai/Trellis/issues/530).
   recoverable state if rollback is incomplete.
 - Restore preflights every affected path before writing anything. Any edit or
   recreation while ablated causes a zero-write conflict refusal.
+- Recheck each restore target immediately before replacement. Restore regular
+  files through a same-directory prepared temporary file and atomic rename;
+  injected failures must clean temporary files and remain retryable.
 - With no conflicts, restore exact bytes/link identity/relevant modes and
   verify all pre-state fingerprints before deleting the external backup.
 - Missing install prints `Trellis is not installed in this project.` and exits

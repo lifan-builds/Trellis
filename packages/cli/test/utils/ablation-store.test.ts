@@ -1,7 +1,9 @@
 import fs from "node:fs";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ABLATION_SCHEMA_VERSION,
@@ -11,6 +13,7 @@ import {
   expectedFileFingerprint,
   fingerprintPath,
   fingerprintsEqual,
+  getTransactionPaths,
   loadAblationTransaction,
   parseAblationState,
   projectKey,
@@ -44,6 +47,7 @@ describe("ablation-store", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (originalStateRoot === undefined) {
       Reflect.deleteProperty(process.env, ABLATION_STATE_ROOT_ENV);
     } else {
@@ -277,11 +281,123 @@ describe("ablation-store", () => {
     });
 
     expect(() => restoreAblationTransaction(transaction)).toThrow(
-      /restore is already in progress/,
+      /ablation operation is already in progress/,
     );
     expect(fs.existsSync(path.join(projectDir, "managed.txt"))).toBe(false);
 
     fs.rmSync(transaction.paths.lockFile);
+    restoreAblationTransaction(transaction);
+    verifyRestoredState(transaction);
+  });
+
+  it("reserves the project before a separate process can stage a concurrent ablation", async () => {
+    const lockFile = getTransactionPaths(projectDir).lockFile;
+    fs.mkdirSync(path.dirname(lockFile), { recursive: true });
+    const holder = spawn(
+      process.execPath,
+      [
+        "-e",
+        `const fs=require("node:fs");fs.writeFileSync(${JSON.stringify(lockFile)},String(process.pid),{flag:"wx",mode:0o600});process.stdout.write("ready\\n");setInterval(()=>{},1000);`,
+      ],
+      { stdio: ["ignore", "pipe", "inherit"] },
+    );
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        holder.once("error", reject);
+        holder.stdout.once("data", () => resolve());
+      });
+      expect(() => stage()).toThrow(
+        /ablation operation is already in progress/,
+      );
+      expect(
+        fs.existsSync(getTransactionPaths(projectDir).transactionDir),
+      ).toBe(false);
+    } finally {
+      holder.kill();
+      await once(holder, "exit");
+      fs.rmSync(lockFile, { force: true });
+    }
+
+    const transaction = stage();
+    expect(transaction.state.status).toBe("preparing");
+  });
+
+  it("preserves a concurrent file edit detected immediately before atomic replacement", () => {
+    const transaction = stage();
+    removeManagedState();
+    transitionAblationState(transaction, "applied");
+    const managedPath = path.join(projectDir, "managed.txt");
+    const originalWriteFileSync = fs.writeFileSync.bind(fs);
+    let injected = false;
+    vi.spyOn(fs, "writeFileSync").mockImplementation(((
+      filePath: fs.PathOrFileDescriptor,
+      data: string | NodeJS.ArrayBufferView,
+      options?: fs.WriteFileOptions,
+    ) => {
+      const result = originalWriteFileSync(filePath, data, options);
+      if (
+        !injected &&
+        String(filePath).includes(".managed.txt.") &&
+        String(filePath).endsWith(".restore.tmp")
+      ) {
+        injected = true;
+        originalWriteFileSync(managedPath, "concurrent edit\n");
+      }
+      return result;
+    }) as typeof fs.writeFileSync);
+
+    expect(() => restoreAblationTransaction(transaction)).toThrow(
+      AblationConflictError,
+    );
+    expect(transaction.state.status).toBe("restoring");
+    expect(fs.readFileSync(managedPath, "utf-8")).toBe("concurrent edit\n");
+    expect(
+      fs
+        .readdirSync(projectDir)
+        .filter((name) => name.endsWith(".restore.tmp")),
+    ).toEqual([]);
+
+    vi.restoreAllMocks();
+    fs.rmSync(managedPath);
+    restoreAblationTransaction(transaction);
+    verifyRestoredState(transaction);
+  });
+
+  it("cleans an atomic restore temp file after an injected rename failure", () => {
+    const transaction = stage();
+    removeManagedState();
+    transitionAblationState(transaction, "applied");
+    const managedPath = path.join(projectDir, "managed.txt");
+    const canonicalManagedPath = path.join(
+      fs.realpathSync(projectDir),
+      "managed.txt",
+    );
+    const originalRenameSync = fs.renameSync.bind(fs);
+    vi.spyOn(fs, "renameSync").mockImplementation((source, destination) => {
+      if (
+        destination === canonicalManagedPath &&
+        String(source).endsWith(".restore.tmp")
+      ) {
+        throw Object.assign(new Error("injected restore rename failure"), {
+          code: "EIO",
+        });
+      }
+      return originalRenameSync(source, destination);
+    });
+
+    expect(() => restoreAblationTransaction(transaction)).toThrow(
+      /injected restore rename failure/,
+    );
+    expect(transaction.state.status).toBe("restoring");
+    expect(fs.existsSync(managedPath)).toBe(false);
+    expect(
+      fs
+        .readdirSync(projectDir)
+        .filter((name) => name.endsWith(".restore.tmp")),
+    ).toEqual([]);
+
+    vi.restoreAllMocks();
     restoreAblationTransaction(transaction);
     verifyRestoredState(transaction);
   });

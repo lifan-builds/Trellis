@@ -63,18 +63,21 @@ preflight to fail; it must not remain active behind a success message.
 1. Reject an existing active transaction.
 2. Build/render the plan. `--dry-run` stops without state creation.
 3. Require `--yes` in non-TTY mode or confirm interactively.
-4. Stage exact backups/metadata in a temporary external directory and verify
+4. Acquire the shared atomic per-project ablate/restore reservation and recheck
+   for a transaction published while planning or confirming.
+5. Stage exact backups/metadata in a temporary external directory and verify
    them.
-5. Atomically publish `preparing` state before project mutation.
-6. Atomically rewrite mixed files, unlink opaque entries, remove `.trellis`,
+6. Atomically publish `preparing` state before project mutation.
+7. Atomically rewrite mixed files, unlink opaque entries, remove `.trellis`,
    and prune only empty managed directories.
-7. Verify every expected ablated fingerprint.
-8. On failure, acquire the project recovery lock and attempt exact rollback.
+8. Verify every expected ablated fingerprint.
+9. On failure, retain the reservation and attempt exact rollback.
    Delete the transaction after the pre-state verifies; if recovery or
    verification fails, retain the transaction in its crash-recoverable
    `preparing`/`restoring` status for a later retry rather than discarding the
    endpoint-fingerprint relaxation.
-9. Mark `applied` and instruct the user to start a fresh agent session.
+10. Mark `applied`, release the reservation on every exit, and instruct the
+    user to start a fresh agent session.
 
 The command never stages, commits, or hides Git changes.
 
@@ -89,7 +92,10 @@ The command never stages, commits, or hides Git changes.
    `conflict`.
 5. Otherwise, while still holding the lock, mark `restoring`, recreate exact
    pre-state content/link/modes, restore `.trellis`, and verify all
-   pre-fingerprints.
+   pre-fingerprints. Regular files are prepared with their final mode in a
+   same-directory temporary file, rechecked immediately before replacement,
+   and installed by atomic rename; failure removes the temporary file while
+   retaining the retryable `restoring` state.
 6. Release the lock on every success and failure path. Delete the transaction
    only after complete verification; retain it on any failure.
 

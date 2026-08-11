@@ -22,6 +22,10 @@ trellis restore [--dry-run] [-y|--yes]
   mutation.
 - `--yes` skips confirmation. A non-TTY mutation without `--yes` fails closed.
 - Repeated `ablate` never stacks transactions; it directs the user to restore.
+- Before snapshot creation, mutation acquires one atomic per-project operation
+  reservation shared with restore. Only one concurrent invocation may proceed;
+  it holds the reservation through staging, apply/rollback, and final state
+  transition, then releases it on every success and failure path.
 - Missing install prints `Trellis is not installed in this project.` and exits
   with status 0 without writes. Missing state and repeated successful restore
   print `No Trellis ablation transaction exists for this project.` and also
@@ -174,16 +178,20 @@ link rather than copying its target.
 1. Validate cwd/install/v2 manifest and reject an existing transaction.
 2. Build the shared strict removal plan and predict empty managed directories.
 3. Render the plan; dry-run exits here.
-4. Copy exact affected paths into a temporary external transaction and verify
+4. Acquire the atomic per-project operation reservation and recheck that no
+   transaction was published while planning or confirming.
+5. Copy exact affected paths into a temporary external transaction and verify
    every backup fingerprint.
-5. Write strict `preparing` state atomically, then rename the complete
+6. Write strict `preparing` state atomically, then rename the complete
    transaction into place before the first project mutation.
-6. Atomically rewrite mixed files, unlink opaque leaves, remove `.trellis`,
+7. Atomically rewrite mixed files, unlink opaque leaves, remove `.trellis`,
    and prune predicted empty managed directories.
-7. Verify every expected ablated fingerprint, then atomically mark `applied`.
-8. On apply/verification failure, attempt exact rollback. Delete recovery state
+8. Verify every expected ablated fingerprint, then atomically mark `applied`.
+9. On apply/verification failure, attempt exact rollback under the same
+   reservation. Delete recovery state
    only after verified rollback; otherwise retain a `preparing`/`restoring`
    status so a retry can safely accept paths already at either exact endpoint.
+10. Release the reservation on every exit.
 
 The command never stages, commits, or hides Git changes.
 
@@ -197,9 +205,14 @@ The command never stages, commits, or hides Git changes.
 4. A `preparing` or `restoring` crash record accepts paths already matching
    either pre-state or expected ablated state, enabling interrupted-operation
    recovery without accepting unrelated content.
-5. Mark `restoring`, copy backup paths without dereferencing links, restore
-   exact modes, and verify every pre-fingerprint.
-6. Delete the external transaction only after complete verification.
+5. Mark `restoring`. For each regular file, prepare exact bytes and mode in a
+   same-directory temporary file, re-fingerprint the target immediately before
+   replacement, and atomically rename the prepared file into place. A changed
+   target becomes a conflict without overwriting it.
+6. Copy non-file backup paths without dereferencing links, restore exact modes,
+   and verify every pre-fingerprint. A write/rename failure cleans temporary
+   files and retains `restoring` so exact endpoint states remain retryable.
+7. Delete the external transaction only after complete verification.
 
 PR 1 performs no three-way merge. Users resolve a conflict by returning the
 reported path to its expected ablated state and rerunning `trellis restore`.

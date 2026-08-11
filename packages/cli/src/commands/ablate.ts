@@ -25,6 +25,7 @@ import {
   stageAblationTransaction,
   transitionAblationState,
   verifyAblatedState,
+  withAblationProjectLock,
   type AblationEntry,
   type LoadedAblationTransaction,
   type PathFingerprint,
@@ -333,9 +334,10 @@ function applyAblationPlan(
 function rollbackFailedAblation(
   transaction: LoadedAblationTransaction,
   originalError: unknown,
+  lockHeld = false,
 ): never {
   try {
-    rollbackAblationTransaction(transaction);
+    rollbackAblationTransaction(transaction, { lockHeld });
   } catch (rollbackError) {
     if (
       transaction.state.status !== "preparing" &&
@@ -421,19 +423,29 @@ export async function ablate(options: AblateOptions = {}): Promise<void> {
   }
 
   const entries = buildAblationEntries(projectRoot, plan, prunableDirectories);
-  const transaction = stageAblationTransaction({
-    projectRoot,
-    configuredPlatforms: [...configuredPlatforms],
-    manifest: prunedManifest,
-    entries,
+  withAblationProjectLock(transactionPaths, () => {
+    if (lstatIfPresent(transactionPaths.transactionDir)) {
+      throw new Error(
+        "This project is already ablated or has an interrupted ablation. Run `trellis restore` first.",
+      );
+    }
+    const transaction = stageAblationTransaction(
+      {
+        projectRoot,
+        configuredPlatforms: [...configuredPlatforms],
+        manifest: prunedManifest,
+        entries,
+      },
+      { lockHeld: true },
+    );
+    try {
+      applyAblationPlan(projectRoot, plan, prunableDirectories, transaction);
+      verifyAblatedState(transaction);
+      transitionAblationState(transaction, "applied");
+    } catch (error) {
+      rollbackFailedAblation(transaction, error, true);
+    }
   });
-  try {
-    applyAblationPlan(projectRoot, plan, prunableDirectories, transaction);
-    verifyAblatedState(transaction);
-    transitionAblationState(transaction, "applied");
-  } catch (error) {
-    rollbackFailedAblation(transaction, error);
-  }
 
   console.log(chalk.green("Trellis is fully ablated for this project."));
   console.log(
