@@ -149,7 +149,71 @@ the build if it is really just an extra write.
 > - Codex hooks require `features.hooks = true` in user config (Codex 0.129+; older versions accept legacy `codex_hooks = true`); 0.129+ also gates per-hook activation behind a one-time `/hooks` TUI review
 > - Platform detection uses `.codex/` only — `.agents/skills/` alone does NOT trigger codex detection
 > - `configDir` is `".codex"`, with `supportsAgentSkills: true` to auto-include `.agents/skills` in managed paths
->
+### Scenario: Codex plugin-owned hooks
+
+#### 1. Scope / Trigger
+
+Trigger: a project installs the companion `plugins/codex` bundle and wants one
+reviewed plugin hook definition instead of repository-local hook approvals.
+
+#### 2. Signatures
+
+```typescript
+type CodexHookMode = "project" | "plugin";
+function parseCodexHookMode(content: string): CodexHookMode;
+function filterCodexProjectHooks(cwd: string, files: Map<string, string>): void;
+```
+
+#### 3. Contracts
+
+- `codex.hook_mode` is read from `.trellis/config.yaml`; missing, malformed, or
+  unknown values resolve to `project`.
+- `project` remains the default and owns `.codex/hooks.json` plus
+  `.codex/hooks/**` through the normal configurator.
+- `plugin` removes those paths from init/update desired files and from the
+  manifest's known-key set. `.codex/config.toml`, agents, and shared skills
+  remain project-managed.
+- The plugin dispatcher executes only its bundled runtime, sets
+  `CODEX_PROJECT_DIR` to the discovered Trellis root, and never loads
+  `.codex/hooks/**` from the active repository. It exits 0 without output when
+  no Trellis root or bundled runtime is available.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required result |
+| --- | --- |
+| plugin mode + removed local hooks + `trellis update` | hooks stay absent; other Codex files update normally |
+| `trellis update --dry-run` in plugin mode | no writes, including no manifest rewrite |
+| project mode or invalid `hook_mode` | existing local-hook behavior is unchanged |
+| planted repository-local hook | never executed by the plugin dispatcher |
+| non-Trellis cwd, malformed input, missing Python/runtime | exit successfully with no context |
+
+#### 5. Good / Base / Bad Cases
+
+- Good: a reviewed plugin injects workflow state from the repository's
+  `.trellis/` while a malicious `.codex/hooks/` file is ignored.
+- Base: users without plugin support keep generated project hooks.
+- Bad: filtering only init output but not update/manifest ownership causes
+  removed hooks to be regenerated or stale hashes to be retained.
+
+#### 6. Tests Required
+
+- Parse the plugin manifest and canonical `hooks/hooks.json` registrations.
+- Black-box the dispatcher for Trellis, non-Trellis, malformed-cwd, and planted
+  local-hook cases; assert bundled output and no local-hook side effect.
+- Cover `configureCodex`, update (including dry-run), manifest pruning, and the
+  unchanged project-mode fallback.
+- Assert bundled Python runtimes remain byte-identical to shared hook templates.
+
+#### 7. Wrong vs Correct
+
+**Wrong:** choose the repository hook whenever it exists and only omit it from
+`trellis init`.
+
+**Correct:** make plugin mode remove the local hook paths at every desired-file
+and manifest-ownership boundary, while the plugin dispatcher always resolves
+and runs its own bundled runtime.
+
 > **Kimi Code is a hybrid skills platform** — workflow/bundled skills go to the shared `.agents/skills/` root via `resolveSkillsNeutral()` (byte-identical to Codex/Gemini/Pi; Kimi discovers that root natively), while the session-boundary commands (`start` / `continue` / `finish-work`, invoked as `/skill:trellis-<name>`) and the Trellis agent prompts are written as Kimi-private skills under `.kimi-code/skills/<name>/SKILL.md`. The same agent prompts are also installed as project-level custom sub-agent definitions at `.kimi-code/agents/trellis-{implement,check,research}.md` (Claude Code-compatible frontmatter), so the main session can dispatch `trellis-<name>` sub-agents directly; the skill copies stay as a guidance/fallback path. Kimi has no project-level hooks/settings file (hooks are user-level `~/.kimi-code/config.toml` only), so no hooks, settings, or extension files are written, and the agent prompts keep the pull-based prelude on implement/check (class-2).
 
 #### Rule: `.agents/skills/` writes use `resolvePlaceholdersNeutral()`
