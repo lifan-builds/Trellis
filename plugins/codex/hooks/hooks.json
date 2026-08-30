@@ -1,5 +1,5 @@
 {
-  "description": "Forward Codex events to Trellis hooks generated in the active repository.",
+  "description": "Run reviewed Trellis hook runtimes from the plugin while reading state from the active repository.",
   "hooks": {
     "UserPromptSubmit": [
       {

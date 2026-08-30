@@ -1,26 +1,14 @@
 #!/usr/bin/env node
 
-/** Forward a Codex plugin event to the repository-local or bundled Trellis hook. */
+/** Forward a Codex plugin event to the bundled Trellis hook runtime. */
 
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const TARGETS = new Map([
-  [
-    "UserPromptSubmit",
-    {
-      local: ".codex/hooks/inject-workflow-state.py",
-      bundled: "inject-workflow-state.py",
-    },
-  ],
-  [
-    "SubagentStart",
-    {
-      local: ".codex/hooks/inject-subagent-context.py",
-      bundled: "inject-subagent-context.py",
-    },
-  ],
+  ["UserPromptSubmit", "inject-workflow-state.py"],
+  ["SubagentStart", "inject-subagent-context.py"],
 ]);
 
 function findTrellisRoot(start) {
@@ -68,16 +56,17 @@ function main() {
   const start = typeof data.cwd === "string" ? data.cwd : process.cwd();
   const root = findTrellisRoot(start);
   if (!root) return 0;
-  let target = path.join(root, targetConfig.local);
-  if (!isFile(target)) {
-    target = path.join(__dirname, "runtime", targetConfig.bundled);
-    if (!isFile(target)) return 0;
-  }
+  const target = path.join(__dirname, "runtime", targetConfig);
+  if (!isFile(target)) return 0;
+  const input =
+    typeof data.cwd === "string"
+      ? raw
+      : Buffer.from(JSON.stringify({ ...data, cwd: root }), "utf8");
 
   for (const command of pythonCommands()) {
     const result = spawnSync(command, [target], {
       cwd: root,
-      input: raw,
+      input,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       env: { ...process.env, CODEX_PROJECT_DIR: root },

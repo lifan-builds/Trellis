@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   mkdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -18,7 +19,7 @@ const repoRoot = path.resolve(
 );
 const pluginRoot = path.join(repoRoot, "plugins", "codex");
 const manifestPath = path.join(pluginRoot, ".codex-plugin", "plugin.json");
-const hooksPath = path.join(pluginRoot, "hooks", "codex-hooks.json");
+const hooksPath = path.join(pluginRoot, "hooks", "hooks.json");
 const dispatcherPath = path.join(
   pluginRoot,
   "hooks",
@@ -66,7 +67,7 @@ describe("Trellis Codex plugin", () => {
     };
 
     expect(manifest.name).toBe("trellis");
-    expect(manifest.hooks).toBe("./hooks/codex-hooks.json");
+    expect(manifest.hooks).toBeUndefined();
     expect(Object.keys(hooks.hooks ?? {}).sort()).toEqual([
       "SubagentStart",
       "UserPromptSubmit",
@@ -82,38 +83,46 @@ describe("Trellis Codex plugin", () => {
     );
   });
 
-  it("forwards the original event to a repository-local hook", () => {
+  it("runs the bundled hook even when a repository-local hook exists", () => {
     const tempRoot = mkdtempSync(
       path.join(os.tmpdir(), "trellis-codex-plugin-"),
     );
     try {
       const nested = path.join(tempRoot, "packages", "app");
-      mkdirSync(path.join(tempRoot, ".trellis"), { recursive: true });
+      symlinkSync(
+        path.join(repoRoot, ".trellis"),
+        path.join(tempRoot, ".trellis"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
       mkdirSync(nested, { recursive: true });
       mkdirSync(path.join(tempRoot, ".codex", "hooks"), { recursive: true });
+      const markerPath = path.join(tempRoot, "local-hook-ran");
       writeFileSync(
         path.join(tempRoot, ".codex", "hooks", "inject-workflow-state.py"),
-        "import sys\nprint(sys.stdin.read(), end='')\n",
+        `from pathlib import Path\nPath(${JSON.stringify(markerPath)}).write_text("ran")\nprint("local hook output")\n`,
       );
 
       const payload = {
         hook_event_name: "UserPromptSubmit",
         cwd: nested,
-        prompt: "hello",
+        prompt: "plugin bundled validation",
       };
       const output = execFileSync(process.execPath, [dispatcherPath], {
-        cwd: pluginRoot,
+        cwd: repoRoot,
         input: `${JSON.stringify(payload)}\n`,
         encoding: "utf8",
       });
 
-      expect(output).toBe(`${JSON.stringify(payload)}\n`);
+      expect(output).toContain('"hookEventName": "UserPromptSubmit"');
+      expect(output).toContain("<workflow-state>");
+      expect(output).not.toContain("local hook output");
+      expect(existsSync(markerPath)).toBe(false);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it("falls back to the bundled hook when the repository-local hook is absent", () => {
+  it("runs the bundled hook when the repository-local hook is absent", () => {
     const output = execFileSync(process.execPath, [dispatcherPath], {
       cwd: repoRoot,
       input: `${JSON.stringify({
@@ -146,20 +155,11 @@ describe("Trellis Codex plugin", () => {
       });
       expect(noProjectOutput).toBe("");
 
-      const trellisRoot = path.join(tempRoot, "trellis");
-      mkdirSync(path.join(trellisRoot, ".trellis"), { recursive: true });
-      expect(existsSync(path.join(trellisRoot, ".codex"))).toBe(false);
-
-      mkdirSync(path.join(trellisRoot, ".codex", "hooks"), { recursive: true });
-      writeFileSync(
-        path.join(trellisRoot, ".codex", "hooks", "inject-workflow-state.py"),
-        "import sys\nprint(sys.stdin.read(), end='')\n",
-      );
       const malformedCwdOutput = execFileSync(
         process.execPath,
         [dispatcherPath],
         {
-          cwd: trellisRoot,
+          cwd: repoRoot,
           input: JSON.stringify({
             hook_event_name: "UserPromptSubmit",
             cwd: { invalid: true },
@@ -167,9 +167,7 @@ describe("Trellis Codex plugin", () => {
           encoding: "utf8",
         },
       );
-      expect(malformedCwdOutput).toBe(
-        '{"hook_event_name":"UserPromptSubmit","cwd":{"invalid":true}}',
-      );
+      expect(malformedCwdOutput).toContain("<workflow-state>");
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

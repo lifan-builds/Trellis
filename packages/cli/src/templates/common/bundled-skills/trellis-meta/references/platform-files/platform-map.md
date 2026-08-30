@@ -80,13 +80,15 @@ Codex, Gemini CLI, Pi Agent, Kimi Code, and DeepSeek Harness (dsh) write the sha
 
 The repository includes a companion plugin under `plugins/codex/`. On Codex
 App/CLI surfaces with plugin support, it registers the same `UserPromptSubmit`
-and `SubagentStart` entry points once. It dispatches into the project's
-generated `.codex/hooks/` files when present, and otherwise runs the same
-stable hook implementations bundled with the plugin while reading repository
-state locally. The plugin is optional: `.codex/hooks.json` remains the
-project-local fallback for Codex surfaces without plugins or for users who do
-not install the companion bundle. Plugin hook review is still required, and
-it does not grant unrelated command, sandbox, or external service permissions.
+and `SubagentStart` entry points once. It runs reviewed hook runtimes from the
+plugin bundle and never executes `.codex/hooks/*` from the active repository;
+repository-local `.trellis` state remains authoritative. Set
+`codex.hook_mode: plugin` in `.trellis/config.yaml`, then remove
+`.codex/hooks.json` and `.codex/hooks/` once. Init/update omit those paths while
+plugin mode is active. The default `project` mode remains the fallback for
+Codex surfaces without plugins or users who do not install the bundle. Plugin
+hook review is still required, and it does not grant unrelated command,
+sandbox, or external service permissions.
 
 ## Decision Rules When Modifying Platform Files
 

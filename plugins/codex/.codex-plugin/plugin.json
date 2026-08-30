@@ -9,17 +9,25 @@
   "homepage": "https://github.com/mindfold-ai/Trellis/tree/main/plugins/codex",
   "repository": "https://github.com/mindfold-ai/Trellis",
   "license": "AGPL-3.0-only",
-  "keywords": ["trellis", "codex", "hooks", "workflow"],
-  "hooks": "./hooks/codex-hooks.json",
+  "keywords": [
+    "trellis",
+    "codex",
+    "hooks",
+    "workflow"
+  ],
   "interface": {
     "displayName": "Trellis",
     "shortDescription": "Trellis workflow context for Codex.",
     "longDescription": "Use Trellis workflow and sub-agent context hooks from one reviewed Codex plugin while keeping project state and customization in each repository.",
     "developerName": "Mindfold AI",
     "category": "Developer Tools",
-    "capabilities": ["Local"],
+    "capabilities": [
+      "Local"
+    ],
     "websiteURL": "https://github.com/mindfold-ai/Trellis",
-    "defaultPrompt": ["Load the Trellis workflow context for this repository."],
+    "defaultPrompt": [
+      "Load the Trellis workflow context for this repository."
+    ],
     "brandColor": "#2563EB"
   }
 }
