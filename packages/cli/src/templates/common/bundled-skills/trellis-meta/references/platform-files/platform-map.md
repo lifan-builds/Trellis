@@ -80,12 +80,13 @@ Codex, Gemini CLI, Pi Agent, Kimi Code, and DeepSeek Harness (dsh) write the sha
 
 The repository includes a companion plugin under `plugins/codex/`. On Codex
 App/CLI surfaces with plugin support, it registers the same `UserPromptSubmit`
-and `SubagentStart` entry points once and dispatches into the project's
-generated `.codex/hooks/` files. The plugin is optional: `.codex/hooks.json`
-remains the project-local fallback for Codex surfaces without plugins or for
-users who do not install the companion bundle. Plugin hook review is still
-required, and it does not grant unrelated command, sandbox, or external
-service permissions.
+and `SubagentStart` entry points once. It dispatches into the project's
+generated `.codex/hooks/` files when present, and otherwise runs the same
+stable hook implementations bundled with the plugin while reading repository
+state locally. The plugin is optional: `.codex/hooks.json` remains the
+project-local fallback for Codex surfaces without plugins or for users who do
+not install the companion bundle. Plugin hook review is still required, and
+it does not grant unrelated command, sandbox, or external service permissions.
 
 ## Decision Rules When Modifying Platform Files
 

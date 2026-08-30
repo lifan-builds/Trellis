@@ -24,12 +24,43 @@ const dispatcherPath = path.join(
   "hooks",
   "trellis-codex-dispatch.cjs",
 );
+const bundledWorkflowHookPath = path.join(
+  pluginRoot,
+  "hooks",
+  "runtime",
+  "inject-workflow-state.py",
+);
+const bundledSubagentHookPath = path.join(
+  pluginRoot,
+  "hooks",
+  "runtime",
+  "inject-subagent-context.py",
+);
+const sharedWorkflowHookPath = path.join(
+  repoRoot,
+  "packages",
+  "cli",
+  "src",
+  "templates",
+  "shared-hooks",
+  "inject-workflow-state.py",
+);
+const sharedSubagentHookPath = path.join(
+  repoRoot,
+  "packages",
+  "cli",
+  "src",
+  "templates",
+  "shared-hooks",
+  "inject-subagent-context.py",
+);
 
 describe("Trellis Codex plugin", () => {
   it("declares the manifest and both supported hook events", () => {
-    const manifest = JSON.parse(
-      readText(manifestPath),
-    ) as { hooks?: string; name?: string };
+    const manifest = JSON.parse(readText(manifestPath)) as {
+      hooks?: string;
+      name?: string;
+    };
     const hooks = JSON.parse(readText(hooksPath)) as {
       hooks?: Record<string, unknown>;
     };
@@ -42,8 +73,19 @@ describe("Trellis Codex plugin", () => {
     ]);
   });
 
+  it("keeps bundled runtime hooks synchronized with shared hook templates", () => {
+    expect(readText(bundledWorkflowHookPath)).toBe(
+      readText(sharedWorkflowHookPath),
+    );
+    expect(readText(bundledSubagentHookPath)).toBe(
+      readText(sharedSubagentHookPath),
+    );
+  });
+
   it("forwards the original event to a repository-local hook", () => {
-    const tempRoot = mkdtempSync(path.join(os.tmpdir(), "trellis-codex-plugin-"));
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-"),
+    );
     try {
       const nested = path.join(tempRoot, "packages", "app");
       mkdirSync(path.join(tempRoot, ".trellis"), { recursive: true });
@@ -71,8 +113,26 @@ describe("Trellis Codex plugin", () => {
     }
   });
 
-  it("is silent outside Trellis repositories and without a local hook", () => {
-    const tempRoot = mkdtempSync(path.join(os.tmpdir(), "trellis-codex-plugin-"));
+  it("falls back to the bundled hook when the repository-local hook is absent", () => {
+    const output = execFileSync(process.execPath, [dispatcherPath], {
+      cwd: repoRoot,
+      input: `${JSON.stringify({
+        hook_event_name: "UserPromptSubmit",
+        cwd: repoRoot,
+        prompt: "plugin fallback validation",
+      })}\n`,
+      encoding: "utf8",
+    });
+
+    expect(output).toContain('"hookEventName": "UserPromptSubmit"');
+    expect(output).toContain("<workflow-state>");
+    expect(output).toContain("<codex-mode>");
+  });
+
+  it("is silent outside Trellis repositories and handles malformed cwd", () => {
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-"),
+    );
     try {
       const nonTrellis = path.join(tempRoot, "plain");
       mkdirSync(nonTrellis, { recursive: true });
@@ -88,15 +148,6 @@ describe("Trellis Codex plugin", () => {
 
       const trellisRoot = path.join(tempRoot, "trellis");
       mkdirSync(path.join(trellisRoot, ".trellis"), { recursive: true });
-      const noHookOutput = execFileSync(process.execPath, [dispatcherPath], {
-        cwd: pluginRoot,
-        input: JSON.stringify({
-          hook_event_name: "SubagentStart",
-          cwd: trellisRoot,
-        }),
-        encoding: "utf8",
-      });
-      expect(noHookOutput).toBe("");
       expect(existsSync(path.join(trellisRoot, ".codex"))).toBe(false);
 
       mkdirSync(path.join(trellisRoot, ".codex", "hooks"), { recursive: true });
