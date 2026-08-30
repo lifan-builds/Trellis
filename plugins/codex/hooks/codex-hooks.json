@@ -1,0 +1,28 @@
+{
+  "description": "Forward Codex events to Trellis hooks generated in the active repository.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path');require(p.join(process.env.PLUGIN_ROOT??process.env.CLAUDE_PLUGIN_ROOT,'hooks','trellis-codex-dispatch.cjs'))\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "^(?:trellis-implement|trellis-check|trellis-research)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path');require(p.join(process.env.PLUGIN_ROOT??process.env.CLAUDE_PLUGIN_ROOT,'hooks','trellis-codex-dispatch.cjs'))\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

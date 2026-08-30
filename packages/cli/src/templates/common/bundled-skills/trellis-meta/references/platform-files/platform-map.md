@@ -9,7 +9,7 @@ This page lists common Trellis file locations in a user project by platform. Whe
 | Claude Code | `--claude` | `.claude/` | `.claude/skills/` | `.claude/agents/` | `.claude/hooks/` + `.claude/settings.json` |
 | Cursor | `--cursor` | `.cursor/` | `.cursor/skills/` | `.cursor/agents/` | `.cursor/hooks.json` + `.cursor/hooks/` |
 | OpenCode | `--opencode` | `.opencode/` | `.opencode/skills/` | `.opencode/agents/` | `.opencode/plugins/` |
-| Codex | `--codex` | `.codex/` | `.agents/skills/` | `.codex/agents/` | `.codex/hooks/` + `.codex/hooks.json` |
+| Codex | `--codex` | `.codex/` | `.agents/skills/` | `.codex/agents/` | `.codex/hooks/` + `.codex/hooks.json`; optional Trellis Codex plugin |
 | Kilo | `--kilo` | `.kilocode/` | `.kilocode/skills/` | Usually none | `.kilocode/workflows/` |
 | Kiro | `--kiro` | `.kiro/` | `.kiro/skills/` | `.kiro/agents/` | `.kiro/hooks/` |
 | Gemini CLI | `--gemini` | `.gemini/` | `.agents/skills/` | `.gemini/agents/` | `.gemini/settings.json` + `.gemini/hooks/` |
@@ -75,6 +75,17 @@ When changing behavior, inspect workflows and skills first. Do not assume Trelli
 ### Shared `.agents/skills/`
 
 Codex, Gemini CLI, Pi Agent, Kimi Code, and DeepSeek Harness (dsh) write the shared `.agents/skills/` layer. Some tools that support agentskills.io can also read this directory. If the user wants multiple compatible tools to share one skill, consider `.agents/skills/` first, but do not assume every platform reads it. ZCode keeps Trellis-managed skills under `.zcode/skills/`.
+
+### Optional Trellis Codex plugin
+
+The repository includes a companion plugin under `plugins/codex/`. On Codex
+App/CLI surfaces with plugin support, it registers the same `UserPromptSubmit`
+and `SubagentStart` entry points once and dispatches into the project's
+generated `.codex/hooks/` files. The plugin is optional: `.codex/hooks.json`
+remains the project-local fallback for Codex surfaces without plugins or for
+users who do not install the companion bundle. Plugin hook review is still
+required, and it does not grant unrelated command, sandbox, or external
+service permissions.
 
 ## Decision Rules When Modifying Platform Files
 
