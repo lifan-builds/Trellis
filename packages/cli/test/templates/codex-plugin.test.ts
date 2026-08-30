@@ -12,7 +12,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../..",
+);
 const pluginRoot = path.join(repoRoot, "plugins", "codex");
 const manifestPath = path.join(pluginRoot, ".codex-plugin", "plugin.json");
 const hooksPath = path.join(pluginRoot, "hooks", "codex-hooks.json");
@@ -51,7 +54,11 @@ describe("Trellis Codex plugin", () => {
         "import sys\nprint(sys.stdin.read(), end='')\n",
       );
 
-      const payload = { hook_event_name: "UserPromptSubmit", cwd: nested, prompt: "hello" };
+      const payload = {
+        hook_event_name: "UserPromptSubmit",
+        cwd: nested,
+        prompt: "hello",
+      };
       const output = execFileSync(process.execPath, [dispatcherPath], {
         cwd: pluginRoot,
         input: `${JSON.stringify(payload)}\n`,
@@ -71,7 +78,10 @@ describe("Trellis Codex plugin", () => {
       mkdirSync(nonTrellis, { recursive: true });
       const noProjectOutput = execFileSync(process.execPath, [dispatcherPath], {
         cwd: pluginRoot,
-        input: JSON.stringify({ hook_event_name: "UserPromptSubmit", cwd: nonTrellis }),
+        input: JSON.stringify({
+          hook_event_name: "UserPromptSubmit",
+          cwd: nonTrellis,
+        }),
         encoding: "utf8",
       });
       expect(noProjectOutput).toBe("");
@@ -80,11 +90,35 @@ describe("Trellis Codex plugin", () => {
       mkdirSync(path.join(trellisRoot, ".trellis"), { recursive: true });
       const noHookOutput = execFileSync(process.execPath, [dispatcherPath], {
         cwd: pluginRoot,
-        input: JSON.stringify({ hook_event_name: "SubagentStart", cwd: trellisRoot }),
+        input: JSON.stringify({
+          hook_event_name: "SubagentStart",
+          cwd: trellisRoot,
+        }),
         encoding: "utf8",
       });
       expect(noHookOutput).toBe("");
       expect(existsSync(path.join(trellisRoot, ".codex"))).toBe(false);
+
+      mkdirSync(path.join(trellisRoot, ".codex", "hooks"), { recursive: true });
+      writeFileSync(
+        path.join(trellisRoot, ".codex", "hooks", "inject-workflow-state.py"),
+        "import sys\nprint(sys.stdin.read(), end='')\n",
+      );
+      const malformedCwdOutput = execFileSync(
+        process.execPath,
+        [dispatcherPath],
+        {
+          cwd: trellisRoot,
+          input: JSON.stringify({
+            hook_event_name: "UserPromptSubmit",
+            cwd: { invalid: true },
+          }),
+          encoding: "utf8",
+        },
+      );
+      expect(malformedCwdOutput).toBe(
+        '{"hook_event_name":"UserPromptSubmit","cwd":{"invalid":true}}',
+      );
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

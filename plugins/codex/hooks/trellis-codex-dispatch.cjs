@@ -19,7 +19,13 @@ function findTrellisRoot(start) {
     return null;
   }
   while (true) {
-    if (fs.existsSync(path.join(current, ".trellis"))) return current;
+    try {
+      if (fs.statSync(path.join(current, ".trellis")).isDirectory()) {
+        return current;
+      }
+    } catch {
+      // Keep walking when a candidate .trellis entry is unreadable or absent.
+    }
     const parent = path.dirname(current);
     if (parent === current) return null;
     current = parent;
@@ -45,7 +51,8 @@ function main() {
   const relativeTarget = TARGETS.get(data.hook_event_name);
   if (!relativeTarget) return 0;
 
-  const root = findTrellisRoot(data.cwd || process.cwd());
+  const start = typeof data.cwd === "string" ? data.cwd : process.cwd();
+  const root = findTrellisRoot(start);
   if (!root) return 0;
   const target = path.join(root, relativeTarget);
   try {
