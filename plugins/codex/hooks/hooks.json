@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('node:path');require(p.join(process.env.PLUGIN_ROOT??process.env.CLAUDE_PLUGIN_ROOT,'hooks','trellis-codex-dispatch.cjs'))\"",
+            "command": "node -e \"const p=require('node:path');require(p.join(process.env.PLUGIN_ROOT,'hooks','trellis-codex-dispatch.cjs'))\"",
             "timeout": 15
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('node:path');require(p.join(process.env.PLUGIN_ROOT??process.env.CLAUDE_PLUGIN_ROOT,'hooks','trellis-codex-dispatch.cjs'))\"",
+            "command": "node -e \"const p=require('node:path');require(p.join(process.env.PLUGIN_ROOT,'hooks','trellis-codex-dispatch.cjs'))\"",
             "timeout": 15
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('node:path');require(p.join(process.env.PLUGIN_ROOT??process.env.CLAUDE_PLUGIN_ROOT,'hooks','trellis-codex-dispatch.cjs'))\"",
+            "command": "node -e \"const p=require('node:path');require(p.join(process.env.PLUGIN_ROOT,'hooks','trellis-codex-dispatch.cjs'))\"",
             "timeout": 15
           }
         ]

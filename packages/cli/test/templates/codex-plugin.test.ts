@@ -84,6 +84,8 @@ describe("Trellis Codex plugin", () => {
 
     expect(manifest.name).toBe("trellis");
     expect(manifest.hooks).toBeUndefined();
+    expect(readText(hooksPath)).toContain("process.env.PLUGIN_ROOT");
+    expect(readText(hooksPath)).not.toContain("CLAUDE_PLUGIN_ROOT");
     expect(Object.keys(hooks.hooks ?? {}).sort()).toEqual([
       "SessionStart",
       "SubagentStart",
