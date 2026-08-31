@@ -87,12 +87,16 @@ def _platform(data: dict[str, Any], explicit: str | None) -> str:
 
 
 def _resolve_context_key(
-    data: dict[str, Any], platform: str | None,
+    data: dict[str, Any],
+    platform: str | None,
+    *,
+    allow_environment_context: bool = True,
 ) -> str | None:
-    """Derive a session context key from payload fields or host environment."""
-    override = _string(os.environ.get("TRELLIS_CONTEXT_ID"))
-    if override:
-        return _sanitize(override) or hashlib.sha256(override.encode("utf-8")).hexdigest()[:24]
+    """Derive a session key from payload fields or, when allowed, environment."""
+    if allow_environment_context:
+        override = _string(os.environ.get("TRELLIS_CONTEXT_ID"))
+        if override:
+            return _sanitize(override) or hashlib.sha256(override.encode("utf-8")).hexdigest()[:24]
 
     platform_name = _platform(data, platform)
     session_id = _lookup(data, ("session_id", "sessionId", "sessionID", "thread_id", "threadId"))
@@ -114,10 +118,11 @@ def _resolve_context_key(
         "copilot": ("COPILOT_SESSION_ID", "COPILOT_SESSIONID"),
         "snow": ("SNOW_SESSION_ID",),
     }
-    for env_key in env_keys.get(platform_name, ()):
-        value = _string(os.environ.get(env_key))
-        if value:
-            return _context_key(platform_name, "session", value)
+    if allow_environment_context:
+        for env_key in env_keys.get(platform_name, ()):
+            value = _string(os.environ.get(env_key))
+            if value:
+                return _context_key(platform_name, "session", value)
     return None
 
 
@@ -151,14 +156,17 @@ def resolve_active_task(
     platform: str | None = None,
     *,
     allow_single_session_fallback: bool = True,
+    allow_environment_context: bool = True,
 ) -> ActiveTask:
     """Resolve the active task from JSON session files without code imports.
 
-    Native sub-agent starts disable sole-session inference because an unknown
-    parent identity must never borrow another window's task.
+    Native sub-agent starts disable environment and sole-session inference
+    because an unknown parent identity must never borrow another window's task.
     """
     sessions = root / ".trellis" / ".runtime" / "sessions"
-    key = _resolve_context_key(data, platform)
+    key = _resolve_context_key(
+        data, platform, allow_environment_context=allow_environment_context,
+    )
     if key:
         context = _read_json(sessions / f"{key}.json")
         active = _active_from_ref(root, _string((context or {}).get("current_task")), "session", key)

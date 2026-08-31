@@ -156,6 +156,7 @@ def get_current_task(
             input_data,
             platform=platform or _detect_platform(input_data),
             allow_single_session_fallback=allow_single_session_fallback,
+            allow_environment_context=allow_environment_context,
         )
         if require_existing and active.stale:
             return None

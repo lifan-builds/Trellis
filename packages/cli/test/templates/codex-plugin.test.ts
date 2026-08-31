@@ -216,6 +216,48 @@ describe("Trellis Codex plugin", () => {
     }
   });
 
+  it("ignores an inherited context override for native parent resolution", () => {
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-context-"),
+    );
+    try {
+      const sessionsDir = path.join(tempRoot, ".trellis", ".runtime", "sessions");
+      mkdirSync(sessionsDir, { recursive: true });
+      const parentTask = path.join(tempRoot, ".trellis", "tasks", "parent-task");
+      const unrelatedTask = path.join(tempRoot, ".trellis", "tasks", "unrelated-task");
+      mkdirSync(parentTask, { recursive: true });
+      mkdirSync(unrelatedTask, { recursive: true });
+      writeFileSync(
+        path.join(sessionsDir, "codex_parent.json"),
+        JSON.stringify({ current_task: ".trellis/tasks/parent-task" }),
+      );
+      writeFileSync(
+        path.join(sessionsDir, "codex_other.json"),
+        JSON.stringify({ current_task: ".trellis/tasks/unrelated-task" }),
+      );
+
+      const script = [
+        "from pathlib import Path",
+        "import sys",
+        "sys.path.insert(0, sys.argv[2])",
+        "from plugin_support import resolve_active_task",
+        "root = Path(sys.argv[1])",
+        "active = resolve_active_task(root, {'session_id': 'parent'}, platform='codex', allow_single_session_fallback=False, allow_environment_context=False)",
+        "assert active.task_path == '.trellis/tasks/parent-task', active",
+      ].join("\n");
+      execFileSync(
+        "python3",
+        ["-c", script, tempRoot, path.join(pluginRoot, "hooks", "runtime")],
+        {
+          encoding: "utf8",
+          env: { ...process.env, TRELLIS_CONTEXT_ID: "codex-other" },
+        },
+      );
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("is silent outside Trellis repositories and handles malformed cwd", () => {
     const tempRoot = mkdtempSync(
       path.join(os.tmpdir(), "trellis-codex-plugin-"),
