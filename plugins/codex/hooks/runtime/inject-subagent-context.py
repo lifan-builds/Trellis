@@ -963,6 +963,12 @@ def _handle_codex_subagent_start(input_data: dict) -> None:
     if not repo_root:
         return
 
+    if os.environ.get("TRELLIS_PLUGIN_RUNTIME") == "1":
+        from plugin_support import is_codex_plugin_mode  # type: ignore[import-not-found]
+
+        if not is_codex_plugin_mode(Path(repo_root)):
+            return
+
     task_dir = get_current_task(
         repo_root,
         {"session_id": parent_session_id},
@@ -1151,6 +1157,12 @@ def main():
     repo_root = find_repo_root(cwd)
     if not repo_root:
         sys.exit(0)
+
+    if os.environ.get("TRELLIS_PLUGIN_RUNTIME") == "1":
+        from plugin_support import is_codex_plugin_mode  # type: ignore[import-not-found]
+
+        if not is_codex_plugin_mode(Path(repo_root)):
+            sys.exit(0)
 
     # Get current task directory (research doesn't require it)
     task_dir = get_current_task(repo_root, input_data)

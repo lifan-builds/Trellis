@@ -88,10 +88,12 @@ codex plugin marketplace add https://github.com/mindfold-ai/Trellis.git
 codex plugin add trellis@trellis
 ```
 
-It registers the same `UserPromptSubmit`
+It registers the same `SessionStart`, `UserPromptSubmit`,
 and `SubagentStart` entry points once. It runs reviewed hook runtimes from the
-plugin bundle and never executes `.codex/hooks/*` from the active repository;
-repository-local `.trellis` state remains authoritative. Set
+plugin bundle only for repositories that set `codex.hook_mode: plugin`; the
+default `project` mode remains project-local. The plugin never executes
+`.codex/hooks/*` from the active repository; repository-local `.trellis` state
+remains authoritative. Set
 `codex.hook_mode: plugin` in `.trellis/config.yaml`, then remove
 `.codex/hooks.json` and `.codex/hooks/` once. Init/update omit those paths while
 plugin mode is active. The default `project` mode remains the fallback for

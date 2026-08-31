@@ -1,6 +1,17 @@
 {
   "description": "Run reviewed Trellis hook runtimes from the plugin while reading state from the active repository.",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path');require(p.join(process.env.PLUGIN_ROOT??process.env.CLAUDE_PLUGIN_ROOT,'hooks','trellis-codex-dispatch.cjs'))\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [

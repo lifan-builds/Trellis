@@ -5,7 +5,6 @@ import {
   mkdtempSync,
   mkdirSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -37,6 +36,22 @@ const bundledSubagentHookPath = path.join(
   "runtime",
   "inject-subagent-context.py",
 );
+const bundledSessionStartHookPath = path.join(
+  pluginRoot,
+  "hooks",
+  "runtime",
+  "session-start.py",
+);
+const codexSessionStartHookPath = path.join(
+  repoRoot,
+  "packages",
+  "cli",
+  "src",
+  "templates",
+  "codex",
+  "hooks",
+  "session-start.py",
+);
 const sharedWorkflowHookPath = path.join(
   repoRoot,
   "packages",
@@ -58,7 +73,7 @@ const sharedSubagentHookPath = path.join(
 const pythonCommand = process.platform === "win32" ? "python" : "python3";
 
 describe("Trellis Codex plugin", () => {
-  it("declares the manifest and both supported hook events", () => {
+  it("declares the manifest and all supported hook events", () => {
     const manifest = JSON.parse(readText(manifestPath)) as {
       hooks?: string;
       name?: string;
@@ -70,6 +85,7 @@ describe("Trellis Codex plugin", () => {
     expect(manifest.name).toBe("trellis");
     expect(manifest.hooks).toBeUndefined();
     expect(Object.keys(hooks.hooks ?? {}).sort()).toEqual([
+      "SessionStart",
       "SubagentStart",
       "UserPromptSubmit",
     ]);
@@ -82,6 +98,33 @@ describe("Trellis Codex plugin", () => {
     expect(readText(bundledSubagentHookPath)).toBe(
       readText(sharedSubagentHookPath),
     );
+    expect(readText(bundledSessionStartHookPath)).toBe(
+      readText(codexSessionStartHookPath),
+    );
+  });
+
+  it("runs the bundled SessionStart hook for a Trellis repository", () => {
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-session-start-"),
+    );
+    setupPluginProject(tempRoot);
+    try {
+      const output = execFileSync(process.execPath, [dispatcherPath], {
+        cwd: repoRoot,
+        input: `${JSON.stringify({
+          hook_event_name: "SessionStart",
+          source: "startup",
+          cwd: tempRoot,
+        })}\n`,
+        encoding: "utf8",
+      });
+
+      expect(output).toContain('"hookEventName": "SessionStart"');
+      expect(output).toContain("<trellis-workflow>");
+      expect(output).toContain("<current-state>");
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("runs the bundled hook even when a repository-local hook exists", () => {
@@ -90,11 +133,7 @@ describe("Trellis Codex plugin", () => {
     );
     try {
       const nested = path.join(tempRoot, "packages", "app");
-      symlinkSync(
-        path.join(repoRoot, ".trellis"),
-        path.join(tempRoot, ".trellis"),
-        process.platform === "win32" ? "junction" : "dir",
-      );
+      setupPluginProject(tempRoot);
       mkdirSync(nested, { recursive: true });
       mkdirSync(path.join(tempRoot, ".codex", "hooks"), { recursive: true });
       const markerPath = path.join(tempRoot, "local-hook-ran");
@@ -124,19 +163,50 @@ describe("Trellis Codex plugin", () => {
   });
 
   it("runs the bundled hook when the repository-local hook is absent", () => {
-    const output = execFileSync(process.execPath, [dispatcherPath], {
-      cwd: repoRoot,
-      input: `${JSON.stringify({
-        hook_event_name: "UserPromptSubmit",
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-no-local-hook-"),
+    );
+    setupPluginProject(tempRoot);
+    try {
+      const output = execFileSync(process.execPath, [dispatcherPath], {
         cwd: repoRoot,
-        prompt: "plugin fallback validation",
-      })}\n`,
-      encoding: "utf8",
-    });
+        input: `${JSON.stringify({
+          hook_event_name: "UserPromptSubmit",
+          cwd: tempRoot,
+          prompt: "plugin fallback validation",
+        })}\n`,
+        encoding: "utf8",
+      });
 
-    expect(output).toContain('"hookEventName": "UserPromptSubmit"');
-    expect(output).toContain("<workflow-state>");
-    expect(output).toContain("<codex-mode>");
+      expect(output).toContain('"hookEventName": "UserPromptSubmit"');
+      expect(output).toContain("<workflow-state>");
+      expect(output).toContain("<codex-mode>");
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not dispatch plugin hooks for legacy project mode", () => {
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-legacy-mode-"),
+    );
+    setupProject(tempRoot, "project");
+    try {
+      for (const hookEventName of ["SessionStart", "UserPromptSubmit"]) {
+        const output = execFileSync(process.execPath, [dispatcherPath], {
+          cwd: repoRoot,
+          input: `${JSON.stringify({
+            hook_event_name: hookEventName,
+            cwd: tempRoot,
+            prompt: "legacy mode validation",
+          })}\n`,
+          encoding: "utf8",
+        });
+        expect(output).toBe("");
+      }
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("does not execute repository-controlled Python helpers", () => {
@@ -150,7 +220,7 @@ describe("Trellis Codex plugin", () => {
       });
       writeFileSync(
         path.join(tempRoot, ".trellis", "config.yaml"),
-        "codex:\n  dispatch_mode: inline\n",
+        "codex:\n  hook_mode: plugin\n  dispatch_mode: inline\n",
       );
       writeFileSync(
         path.join(tempRoot, ".trellis", "workflow.md"),
@@ -180,6 +250,19 @@ describe("Trellis Codex plugin", () => {
 
       expect(output).toContain("<workflow-state>");
       expect(existsSync(markerPath)).toBe(false);
+
+      const sessionOutput = execFileSync(process.execPath, [dispatcherPath], {
+        cwd: repoRoot,
+        input: `${JSON.stringify({
+          hook_event_name: "SessionStart",
+          source: "startup",
+          cwd: tempRoot,
+        })}\n`,
+        encoding: "utf8",
+      });
+      expect(sessionOutput).toContain('"hookEventName": "SessionStart"');
+      expect(sessionOutput).toContain("<current-state>");
+      expect(existsSync(markerPath)).toBe(false);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -193,6 +276,7 @@ describe("Trellis Codex plugin", () => {
       mkdirSync(path.join(tempRoot, ".trellis", ".runtime", "sessions"), {
         recursive: true,
       });
+      setupPluginProject(tempRoot);
       const taskDir = path.join(tempRoot, ".trellis", "tasks", "other-task");
       mkdirSync(taskDir, { recursive: true });
       writeFileSync(
@@ -243,6 +327,7 @@ describe("Trellis Codex plugin", () => {
         "sessions",
       );
       mkdirSync(sessionsDir, { recursive: true });
+      setupPluginProject(tempRoot);
       const parentTask = path.join(
         tempRoot,
         ".trellis",
@@ -292,6 +377,10 @@ describe("Trellis Codex plugin", () => {
     const tempRoot = mkdtempSync(
       path.join(os.tmpdir(), "trellis-codex-plugin-"),
     );
+    const projectRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-valid-"),
+    );
+    setupPluginProject(projectRoot);
     try {
       const nonTrellis = path.join(tempRoot, "plain");
       mkdirSync(nonTrellis, { recursive: true });
@@ -309,7 +398,7 @@ describe("Trellis Codex plugin", () => {
         process.execPath,
         [dispatcherPath],
         {
-          cwd: repoRoot,
+          cwd: projectRoot,
           input: JSON.stringify({
             hook_event_name: "UserPromptSubmit",
             cwd: { invalid: true },
@@ -320,10 +409,24 @@ describe("Trellis Codex plugin", () => {
       expect(malformedCwdOutput).toContain("<workflow-state>");
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
+      rmSync(projectRoot, { recursive: true, force: true });
     }
   });
 });
 
 function readText(filePath: string): string {
   return readFileSync(filePath, "utf8");
+}
+
+function setupProject(root: string, hookMode: "plugin" | "project"): void {
+  mkdirSync(path.join(root, ".trellis"), { recursive: true });
+  writeFileSync(
+    path.join(root, ".trellis", "config.yaml"),
+    `codex:\n  hook_mode: ${hookMode}\n`,
+  );
+  writeFileSync(path.join(root, ".trellis", "workflow.md"), "# Workflow\n");
+}
+
+function setupPluginProject(root: string): void {
+  setupProject(root, "plugin");
 }

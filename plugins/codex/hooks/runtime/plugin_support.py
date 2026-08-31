@@ -126,6 +126,11 @@ def _resolve_context_key(
     return None
 
 
+def resolve_context_key(data: dict[str, Any], platform: str | None = None) -> str | None:
+    """Resolve a session context key for plugin runtimes."""
+    return _resolve_context_key(data, platform)
+
+
 def _safe_task_path(root: Path, task_ref: str) -> Path | None:
     """Resolve a task reference only when it remains inside the repository."""
     candidate = Path(task_ref)
@@ -235,6 +240,12 @@ def read_config(root: Path) -> dict[str, Any]:
             value = value[1:-1]
         parent[key] = value
     return result
+
+
+def is_codex_plugin_mode(root: Path) -> bool:
+    """Return whether the repository opted into plugin-owned Codex hooks."""
+    codex = read_config(root).get("codex")
+    return isinstance(codex, dict) and str(codex.get("hook_mode", "")).strip().lower() == "plugin"
 
 
 def context_injection_limits(config: dict[str, Any]) -> dict[str, int]:

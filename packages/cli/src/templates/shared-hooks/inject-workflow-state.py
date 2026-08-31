@@ -443,6 +443,12 @@ def main() -> int:
     if root is None:
         return 0  # not a Trellis project
 
+    if os.environ.get("TRELLIS_PLUGIN_RUNTIME") == "1":
+        from plugin_support import is_codex_plugin_mode  # type: ignore[import-not-found]
+
+        if not is_codex_plugin_mode(root):
+            return 0
+
     config = _read_trellis_config(root)
     if prompt_has_skip_keyword(data.get("prompt", ""), _resolve_skip_keyword(config)):
         return 0  # user opted out of the per-turn breadcrumb for this turn

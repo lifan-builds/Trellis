@@ -7,6 +7,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const TARGETS = new Map([
+  ["SessionStart", "session-start.py"],
   ["UserPromptSubmit", "inject-workflow-state.py"],
   ["SubagentStart", "inject-subagent-context.py"],
 ]);
