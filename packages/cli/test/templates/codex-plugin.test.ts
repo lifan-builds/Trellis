@@ -180,6 +180,42 @@ describe("Trellis Codex plugin", () => {
     }
   });
 
+  it("does not borrow an unrelated sole session for a native subagent", () => {
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-session-"),
+    );
+    try {
+      mkdirSync(path.join(tempRoot, ".trellis", ".runtime", "sessions"), {
+        recursive: true,
+      });
+      const taskDir = path.join(tempRoot, ".trellis", "tasks", "other-task");
+      mkdirSync(taskDir, { recursive: true });
+      writeFileSync(
+        path.join(taskDir, "task.json"),
+        JSON.stringify({ id: "other-task", status: "in_progress" }),
+      );
+      writeFileSync(
+        path.join(tempRoot, ".trellis", ".runtime", "sessions", "codex-other.json"),
+        JSON.stringify({ current_task: ".trellis/tasks/other-task" }),
+      );
+
+      const script = [
+        "from pathlib import Path",
+        "import sys",
+        "sys.path.insert(0, sys.argv[2])",
+        "from plugin_support import resolve_active_task",
+        "root = Path(sys.argv[1])",
+        "active = resolve_active_task(root, {'session_id': 'missing'}, platform='codex', allow_single_session_fallback=False)",
+        "assert active.task_path is None, active",
+      ].join("\n");
+      execFileSync("python3", ["-c", script, tempRoot, path.join(pluginRoot, "hooks", "runtime")], {
+        encoding: "utf8",
+      });
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("is silent outside Trellis repositories and handles malformed cwd", () => {
     const tempRoot = mkdtempSync(
       path.join(os.tmpdir(), "trellis-codex-plugin-"),

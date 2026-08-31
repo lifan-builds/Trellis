@@ -138,9 +138,17 @@ def _active_from_ref(root: Path, task_ref: str | None, source: str, key: str | N
 
 
 def resolve_active_task(
-    root: Path, data: dict[str, Any], platform: str | None = None,
+    root: Path,
+    data: dict[str, Any],
+    platform: str | None = None,
+    *,
+    allow_single_session_fallback: bool = True,
 ) -> ActiveTask:
-    """Resolve the active task from JSON session files without code imports."""
+    """Resolve the active task from JSON session files without code imports.
+
+    Native sub-agent starts disable sole-session inference because an unknown
+    parent identity must never borrow another window's task.
+    """
     sessions = root / ".trellis" / ".runtime" / "sessions"
     key = _resolve_context_key(data, platform)
     if key:
@@ -153,7 +161,7 @@ def resolve_active_task(
         files = sorted(sessions.glob("*.json"))
     except OSError:
         files = []
-    if len(files) == 1:
+    if allow_single_session_fallback and len(files) == 1:
         context = _read_json(files[0]) or {}
         active = _active_from_ref(
             root, _string(context.get("current_task")), "session-fallback", files[0].stem,

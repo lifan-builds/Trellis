@@ -151,7 +151,10 @@ def get_current_task(
         from plugin_support import resolve_active_task  # type: ignore[import-not-found]
 
         active = resolve_active_task(
-            Path(repo_root), input_data, platform=platform or _detect_platform(input_data),
+            Path(repo_root),
+            input_data,
+            platform=platform or _detect_platform(input_data),
+            allow_single_session_fallback=allow_single_session_fallback,
         )
         if require_existing and active.stale:
             return None
