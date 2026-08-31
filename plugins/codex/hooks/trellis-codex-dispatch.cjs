@@ -69,7 +69,11 @@ function main() {
       input,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
-      env: { ...process.env, CODEX_PROJECT_DIR: root },
+      env: {
+        ...process.env,
+        CODEX_PROJECT_DIR: root,
+        TRELLIS_PLUGIN_RUNTIME: "1",
+      },
     });
     if (result.error) continue;
     if (result.stdout?.length) process.stdout.write(result.stdout);

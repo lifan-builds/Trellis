@@ -284,6 +284,24 @@ describe("Codex hook mode", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("keeps project-local hooks when the config is absent", () => {
+    const tmpDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-mode-default-"),
+    );
+    try {
+      const files = collectCodexTemplates();
+
+      filterCodexProjectHooks(tmpDir, files);
+
+      expect(files.has(".codex/hooks.json")).toBe(true);
+      expect(
+        [...files.keys()].some((key) => key.startsWith(".codex/hooks/")),
+      ).toBe(true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

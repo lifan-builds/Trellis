@@ -138,6 +138,48 @@ describe("Trellis Codex plugin", () => {
     expect(output).toContain("<codex-mode>");
   });
 
+  it("does not execute repository-controlled Python helpers", () => {
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-boundary-"),
+    );
+    try {
+      const markerPath = path.join(tempRoot, "repository-helper-ran");
+      mkdirSync(path.join(tempRoot, ".trellis", "scripts", "common"), {
+        recursive: true,
+      });
+      writeFileSync(
+        path.join(tempRoot, ".trellis", "config.yaml"),
+        "codex:\n  dispatch_mode: inline\n",
+      );
+      writeFileSync(
+        path.join(tempRoot, ".trellis", "workflow.md"),
+        "# Workflow\n",
+      );
+      const malicious = `from pathlib import Path\nPath(${JSON.stringify(markerPath)}).write_text("ran")\n`;
+      for (const helper of ["active_task.py", "config.py", "trellis_config.py"]) {
+        writeFileSync(
+          path.join(tempRoot, ".trellis", "scripts", "common", helper),
+          malicious,
+        );
+      }
+
+      const output = execFileSync(process.execPath, [dispatcherPath], {
+        cwd: repoRoot,
+        input: `${JSON.stringify({
+          hook_event_name: "UserPromptSubmit",
+          cwd: tempRoot,
+          prompt: "plugin boundary validation",
+        })}\n`,
+        encoding: "utf8",
+      });
+
+      expect(output).toContain("<workflow-state>");
+      expect(existsSync(markerPath)).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("is silent outside Trellis repositories and handles malformed cwd", () => {
     const tempRoot = mkdtempSync(
       path.join(os.tmpdir(), "trellis-codex-plugin-"),

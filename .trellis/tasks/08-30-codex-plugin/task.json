@@ -16,13 +16,11 @@
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
-  "pr_url": null,
+  "pr_url": "https://github.com/mindfold-ai/Trellis/pull/594",
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
   "notes": "",
-  "meta": {
-    "pr_url": "https://github.com/mindfold-ai/Trellis/pull/594"
-  }
+  "meta": {}
 }

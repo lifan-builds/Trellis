@@ -39,9 +39,12 @@ codex:
   hook_mode: plugin
 ```
 
-Remove the existing `.codex/hooks.json` file and `.codex/hooks/` directory
-once. With plugin mode active, later `trellis init` and `trellis update` runs
-omit those paths instead of regenerating them. Keep the default
+Plugin mode disables the repository-local Codex hooks. Before removing the
+managed `.codex/hooks.json` file and `.codex/hooks/` directory, back up or move
+any entries you added yourself; preserve those user-owned hooks separately and
+remove only the Trellis-managed hook definitions. With plugin mode active,
+later `trellis init` and `trellis update` runs omit the Trellis paths instead of
+regenerating them. Keep the default
 `hook_mode: project` when the plugin is not installed or the Codex surface does
 not support plugins.
 

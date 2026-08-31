@@ -151,6 +151,10 @@ def _detect_platform(input_data: dict) -> str | None:
 
 
 def _resolve_active_task(root: Path, input_data: dict):
+    if os.environ.get("TRELLIS_PLUGIN_RUNTIME") == "1":
+        from plugin_support import resolve_active_task  # type: ignore[import-not-found]
+
+        return resolve_active_task(root, input_data, platform=_detect_platform(input_data))
     scripts_dir = root / ".trellis" / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
@@ -239,6 +243,10 @@ def _read_trellis_config(root: Path) -> dict:
     The helper lives in .trellis/scripts/common; the hook lives outside the
     scripts tree, so we extend sys.path before importing.
     """
+    if os.environ.get("TRELLIS_PLUGIN_RUNTIME") == "1":
+        from plugin_support import read_config  # type: ignore[import-not-found]
+
+        return read_config(root)
     scripts_dir = root / ".trellis" / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))

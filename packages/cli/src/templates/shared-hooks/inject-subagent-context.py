@@ -147,6 +147,15 @@ def get_current_task(
     require_existing: bool = False,
 ) -> str | None:
     """Resolve current task directory through the unified active task resolver."""
+    if os.environ.get("TRELLIS_PLUGIN_RUNTIME") == "1":
+        from plugin_support import resolve_active_task  # type: ignore[import-not-found]
+
+        active = resolve_active_task(
+            Path(repo_root), input_data, platform=platform or _detect_platform(input_data),
+        )
+        if require_existing and active.stale:
+            return None
+        return active.task_path
     scripts_dir = Path(repo_root) / DIR_WORKFLOW / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
@@ -188,6 +197,13 @@ DEFAULT_LIMITS: dict[str, int] = {
 
 def _get_limits(repo_root: str) -> dict[str, int]:
     """Load context-injection byte limits from config.yaml, with safe fallback."""
+    if os.environ.get("TRELLIS_PLUGIN_RUNTIME") == "1":
+        from plugin_support import (  # type: ignore[import-not-found]
+            context_injection_limits,
+            read_config,
+        )
+
+        return context_injection_limits(read_config(Path(repo_root)))
     scripts_dir = Path(repo_root) / DIR_WORKFLOW / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
