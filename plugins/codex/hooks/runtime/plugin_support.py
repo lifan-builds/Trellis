@@ -35,6 +35,7 @@ class ActiveTask:
 
 
 def _string(value: Any) -> str | None:
+    """Return a trimmed non-empty string, or ``None`` for other values."""
     if not isinstance(value, str):
         return None
     value = value.strip()
@@ -42,6 +43,7 @@ def _string(value: Any) -> str | None:
 
 
 def _lookup(data: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    """Find the first requested string key in a payload or its known nests."""
     for key in keys:
         value = _string(data.get(key))
         if value:
@@ -56,11 +58,13 @@ def _lookup(data: dict[str, Any], keys: tuple[str, ...]) -> str | None:
 
 
 def _sanitize(value: str) -> str:
+    """Convert an external identifier into a safe, bounded filename fragment."""
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip()).strip("._-")
     return safe[:160]
 
 
 def _context_key(platform: str, kind: str, value: str) -> str:
+    """Build the stable session filename key used by Trellis runtime state."""
     safe_platform = {"zcode": "claude", "factory": "droid"}.get(platform, platform)
     if kind == "transcript":
         value = hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
@@ -72,6 +76,7 @@ def _context_key(platform: str, kind: str, value: str) -> str:
 
 
 def _platform(data: dict[str, Any], explicit: str | None) -> str:
+    """Resolve and sanitize the platform label associated with a hook payload."""
     if explicit:
         return _sanitize(explicit) or "session"
     for key in ("_trellis_platform", "trellis_platform", "platform", "source"):
@@ -84,6 +89,7 @@ def _platform(data: dict[str, Any], explicit: str | None) -> str:
 def _resolve_context_key(
     data: dict[str, Any], platform: str | None,
 ) -> str | None:
+    """Derive a session context key from payload fields or host environment."""
     override = _string(os.environ.get("TRELLIS_CONTEXT_ID"))
     if override:
         return _sanitize(override) or hashlib.sha256(override.encode("utf-8")).hexdigest()[:24]
@@ -116,6 +122,7 @@ def _resolve_context_key(
 
 
 def _safe_task_path(root: Path, task_ref: str) -> Path | None:
+    """Resolve a task reference only when it remains inside the repository."""
     candidate = Path(task_ref)
     try:
         resolved = (candidate if candidate.is_absolute() else root / candidate).resolve()
@@ -131,6 +138,7 @@ def _safe_task_path(root: Path, task_ref: str) -> Path | None:
 
 
 def _active_from_ref(root: Path, task_ref: str | None, source: str, key: str | None) -> ActiveTask | None:
+    """Convert a persisted task reference into an ``ActiveTask`` value."""
     if not task_ref:
         return None
     resolved = _safe_task_path(root, task_ref)
@@ -172,6 +180,7 @@ def resolve_active_task(
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
+    """Read a JSON object, returning ``None`` for invalid or inaccessible data."""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -180,6 +189,7 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 
 
 def _strip_comment(value: str) -> str:
+    """Remove a simple YAML-style trailing comment from a scalar value."""
     match = re.search(r"\s+#", value)
     return value[: match.start()].rstrip() if match else value.strip()
 
@@ -220,6 +230,7 @@ def read_config(root: Path) -> dict[str, Any]:
 
 
 def context_injection_limits(config: dict[str, Any]) -> dict[str, int]:
+    """Return configured context byte limits, falling back to safe defaults."""
     defaults = {"max_file_bytes": 32768, "max_artifact_bytes": 65536, "max_total_bytes": 131072}
     section = config.get("context_injection")
     if not isinstance(section, dict):

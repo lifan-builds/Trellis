@@ -99,6 +99,7 @@ def find_trellis_root(start: Path) -> Optional[Path]:
 # ---------------------------------------------------------------------------
 
 def _detect_platform(input_data: dict) -> str | None:
+    """Infer the originating host from hook payload and project environment."""
     if isinstance(input_data.get("cursor_version"), str):
         return "cursor"
     # CLAUDE_PROJECT_DIR is a compatibility alias that several hosts set
@@ -151,6 +152,7 @@ def _detect_platform(input_data: dict) -> str | None:
 
 
 def _resolve_active_task(root: Path, input_data: dict):
+    """Resolve the active task through bundled or repository Trellis helpers."""
     if os.environ.get("TRELLIS_PLUGIN_RUNTIME") == "1":
         from plugin_support import resolve_active_task  # type: ignore[import-not-found]
 
@@ -405,6 +407,7 @@ def _load_hook_input() -> dict:
     result_queue: "queue.Queue[str | Exception]" = queue.Queue(maxsize=1)
 
     def _read() -> None:
+        """Read stdin in the daemon thread used by the bounded input loader."""
         try:
             result_queue.put(sys.stdin.read())
         except Exception as exc:
@@ -427,6 +430,7 @@ def _load_hook_input() -> dict:
 
 
 def main() -> int:
+    """Emit workflow state for one hook invocation and fail open on errors."""
     if os.environ.get("TRELLIS_HOOKS") == "0" or os.environ.get("TRELLIS_DISABLE_HOOKS") == "1":
         return 0
 

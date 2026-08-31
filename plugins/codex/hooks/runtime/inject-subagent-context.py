@@ -88,6 +88,7 @@ def find_repo_root(start_path: str) -> str | None:
 
 
 def _detect_platform(input_data: dict) -> str | None:
+    """Infer the originating host from hook payload and project environment."""
     if _hook_event_name(input_data) == "SubagentStart":
         return "codex"
     if isinstance(input_data.get("cursor_version"), str):
@@ -256,15 +257,18 @@ class _Budget:
     """Tracks the running total of bytes emitted into the sub-agent context."""
 
     def __init__(self, max_total_bytes: int) -> None:
+        """Create a byte budget with the supplied maximum total size."""
         self.max_total_bytes = max_total_bytes
         self.used = 0
 
     def has_room(self, size: int) -> bool:
+        """Return whether ``size`` bytes can be added without exceeding the cap."""
         if self.max_total_bytes <= 0:
             return True
         return self.used + size <= self.max_total_bytes
 
     def add(self, size: int) -> None:
+        """Account for bytes emitted into the generated context."""
         self.used += size
 
 
@@ -305,6 +309,7 @@ def _read_file_bytes(base_path: str, file_path: str) -> bytes | None:
 
 
 def _truncate_notice(path: str, cap: int) -> str:
+    """Describe that a file was truncated and where its full content lives."""
     return f"\n[Trellis: truncated at {cap} bytes — read {path} for the full content]"
 
 
@@ -320,6 +325,7 @@ def _is_binary_content(data: bytes) -> bool:
 
 
 def _binary_notice(path: str, size: int, reason: str) -> str:
+    """Describe why binary content was omitted from model context."""
     return (
         f"[Trellis: not inlined (binary file) — "
         f"{path} ({size} bytes): {reason}]"
@@ -327,6 +333,7 @@ def _binary_notice(path: str, size: int, reason: str) -> str:
 
 
 def _index_notice(path: str, size: int, reason: str) -> str:
+    """Describe why a file was indexed instead of inlined in the context."""
     return (
         f"[Trellis: not inlined (total context limit reached) — "
         f"{path} ({size} bytes): {reason}]"
@@ -886,6 +893,7 @@ Provide structured search results including:
 
 
 def _string_value(value: Any) -> str:
+    """Return a trimmed string value or an empty string for other values."""
     if isinstance(value, str):
         stripped = value.strip()
         return stripped
@@ -1046,6 +1054,7 @@ def _extract_subagent_name(value: Any) -> str:
 
 
 def _extract_subagent_type(tool_input: dict) -> str:
+    """Extract a supported Trellis agent name from tool input variants."""
     for key in (
         "subagent_type",
         "subagentType",
@@ -1110,6 +1119,7 @@ def _parse_hook_input(input_data: dict) -> tuple[str, str, dict]:
 
 
 def main():
+    """Handle one sub-agent hook invocation and fail open on malformed input."""
     if os.environ.get("TRELLIS_HOOKS") == "0" or os.environ.get("TRELLIS_DISABLE_HOOKS") == "1":
         sys.exit(0)
 
