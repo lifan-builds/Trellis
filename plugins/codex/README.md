@@ -6,10 +6,25 @@ equivalent project hook in every repository.
 
 ## Install
 
-Install the `plugins/codex` directory from the Trellis repository with the
-Codex plugin manager, then enable the **Trellis** plugin. The plugin directory
-contains the `.codex-plugin/plugin.json` manifest and does not need to be
-copied into a project.
+Add the Trellis repository as a Codex marketplace, then install and enable the
+**Trellis** plugin. The repository includes the marketplace metadata Codex
+needs to discover `plugins/codex`:
+
+```sh
+codex plugin marketplace add https://github.com/mindfold-ai/Trellis.git
+codex plugin add trellis@trellis
+```
+
+For a local checkout while developing the plugin, use its absolute path
+instead:
+
+```sh
+codex plugin marketplace add /path/to/Trellis
+codex plugin add trellis@trellis
+```
+
+The plugin directory contains the `.codex-plugin/plugin.json` manifest and
+does not need to be copied into a project.
 
 In each project, run the normal setup when Trellis is not initialized yet:
 

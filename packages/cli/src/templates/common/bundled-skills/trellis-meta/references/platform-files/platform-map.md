@@ -78,8 +78,17 @@ Codex, Gemini CLI, Pi Agent, Kimi Code, and DeepSeek Harness (dsh) write the sha
 
 ### Optional Trellis Codex plugin
 
-The repository includes a companion plugin under `plugins/codex/`. On Codex
-App/CLI surfaces with plugin support, it registers the same `UserPromptSubmit`
+The repository includes a companion plugin under `plugins/codex/` and a Codex
+marketplace manifest at `.agents/plugins/marketplace.json`. On Codex App/CLI
+surfaces with plugin support, add the Trellis repository as a marketplace and
+install the plugin once:
+
+```sh
+codex plugin marketplace add https://github.com/mindfold-ai/Trellis.git
+codex plugin add trellis@trellis
+```
+
+It registers the same `UserPromptSubmit`
 and `SubagentStart` entry points once. It runs reviewed hook runtimes from the
 plugin bundle and never executes `.codex/hooks/*` from the active repository;
 repository-local `.trellis` state remains authoritative. Set
