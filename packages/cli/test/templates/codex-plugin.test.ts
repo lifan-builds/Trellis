@@ -55,6 +55,7 @@ const sharedSubagentHookPath = path.join(
   "shared-hooks",
   "inject-subagent-context.py",
 );
+const pythonCommand = process.platform === "win32" ? "python" : "python3";
 
 describe("Trellis Codex plugin", () => {
   it("declares the manifest and both supported hook events", () => {
@@ -156,7 +157,11 @@ describe("Trellis Codex plugin", () => {
         "# Workflow\n",
       );
       const malicious = `from pathlib import Path\nPath(${JSON.stringify(markerPath)}).write_text("ran")\n`;
-      for (const helper of ["active_task.py", "config.py", "trellis_config.py"]) {
+      for (const helper of [
+        "active_task.py",
+        "config.py",
+        "trellis_config.py",
+      ]) {
         writeFileSync(
           path.join(tempRoot, ".trellis", "scripts", "common", helper),
           malicious,
@@ -195,7 +200,13 @@ describe("Trellis Codex plugin", () => {
         JSON.stringify({ id: "other-task", status: "in_progress" }),
       );
       writeFileSync(
-        path.join(tempRoot, ".trellis", ".runtime", "sessions", "codex-other.json"),
+        path.join(
+          tempRoot,
+          ".trellis",
+          ".runtime",
+          "sessions",
+          "codex-other.json",
+        ),
         JSON.stringify({ current_task: ".trellis/tasks/other-task" }),
       );
 
@@ -208,9 +219,13 @@ describe("Trellis Codex plugin", () => {
         "active = resolve_active_task(root, {'session_id': 'missing'}, platform='codex', allow_single_session_fallback=False)",
         "assert active.task_path is None, active",
       ].join("\n");
-      execFileSync("python3", ["-c", script, tempRoot, path.join(pluginRoot, "hooks", "runtime")], {
-        encoding: "utf8",
-      });
+      execFileSync(
+        pythonCommand,
+        ["-c", script, tempRoot, path.join(pluginRoot, "hooks", "runtime")],
+        {
+          encoding: "utf8",
+        },
+      );
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -221,10 +236,25 @@ describe("Trellis Codex plugin", () => {
       path.join(os.tmpdir(), "trellis-codex-plugin-context-"),
     );
     try {
-      const sessionsDir = path.join(tempRoot, ".trellis", ".runtime", "sessions");
+      const sessionsDir = path.join(
+        tempRoot,
+        ".trellis",
+        ".runtime",
+        "sessions",
+      );
       mkdirSync(sessionsDir, { recursive: true });
-      const parentTask = path.join(tempRoot, ".trellis", "tasks", "parent-task");
-      const unrelatedTask = path.join(tempRoot, ".trellis", "tasks", "unrelated-task");
+      const parentTask = path.join(
+        tempRoot,
+        ".trellis",
+        "tasks",
+        "parent-task",
+      );
+      const unrelatedTask = path.join(
+        tempRoot,
+        ".trellis",
+        "tasks",
+        "unrelated-task",
+      );
       mkdirSync(parentTask, { recursive: true });
       mkdirSync(unrelatedTask, { recursive: true });
       writeFileSync(
@@ -246,7 +276,7 @@ describe("Trellis Codex plugin", () => {
         "assert active.task_path == '.trellis/tasks/parent-task', active",
       ].join("\n");
       execFileSync(
-        "python3",
+        pythonCommand,
         ["-c", script, tempRoot, path.join(pluginRoot, "hooks", "runtime")],
         {
           encoding: "utf8",
