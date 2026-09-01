@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
   existsSync,
   readFileSync,
@@ -124,6 +124,58 @@ describe("Trellis Codex plugin", () => {
       expect(output).toContain('"hookEventName": "SessionStart"');
       expect(output).toContain("<trellis-workflow>");
       expect(output).toContain("<current-state>");
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves nested cwd and does not block when stdin stays open", async () => {
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-nested-session-start-"),
+    );
+    const nested = path.join(tempRoot, "packages", "app");
+    setupPluginProject(tempRoot);
+    mkdirSync(nested, { recursive: true });
+    try {
+      const result = await runDispatcherWithOpenStdin({
+        hook_event_name: "SessionStart",
+        source: "startup",
+        cwd: nested,
+      });
+
+      expect(result.timedOut, result.stderr).toBe(false);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('"hookEventName": "SessionStart"');
+      expect(result.stdout).toContain("<trellis-workflow>");
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("bundled Python hooks fail open when stdin stays open", async () => {
+    const tempRoot = mkdtempSync(
+      path.join(os.tmpdir(), "trellis-codex-plugin-python-stdin-"),
+    );
+    setupPluginProject(tempRoot);
+    try {
+      const sessionResult = await runPythonWithOpenStdin(
+        bundledSessionStartHookPath,
+        { cwd: tempRoot },
+        tempRoot,
+        { TRELLIS_PLUGIN_RUNTIME: "1" },
+      );
+      expect(sessionResult.timedOut, sessionResult.stderr).toBe(false);
+      expect(sessionResult.code).toBe(0);
+      expect(sessionResult.stdout).toContain('"hookEventName": "SessionStart"');
+
+      const subagentResult = await runPythonWithOpenStdin(
+        bundledSubagentHookPath,
+        {},
+        tempRoot,
+      );
+      expect(subagentResult.timedOut, subagentResult.stderr).toBe(false);
+      expect(subagentResult.code).toBe(0);
+      expect(subagentResult.stdout).toBe("");
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -431,4 +483,88 @@ function setupProject(root: string, hookMode: "plugin" | "project"): void {
 
 function setupPluginProject(root: string): void {
   setupProject(root, "plugin");
+}
+
+async function runDispatcherWithOpenStdin(payload: object): Promise<{
+  code: number | null;
+  stderr: string;
+  stdout: string;
+  timedOut: boolean;
+}> {
+  const child = spawn(process.execPath, [dispatcherPath], {
+    cwd: repoRoot,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  child.stdin.write(`${JSON.stringify(payload)}\n`);
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolve({ code: null, stderr, stdout, timedOut: true });
+    }, 4000);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve({ code, stderr, stdout, timedOut: false });
+    });
+  });
+}
+
+async function runPythonWithOpenStdin(
+  scriptPath: string,
+  payload: object,
+  cwd: string,
+  env: Record<string, string> = {},
+): Promise<{
+  code: number | null;
+  stderr: string;
+  stdout: string;
+  timedOut: boolean;
+}> {
+  const child = spawn(pythonCommand, [scriptPath], {
+    cwd,
+    env: { ...process.env, ...env },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  child.stdin.write(`${JSON.stringify(payload)}\n`);
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolve({ code: null, stderr, stdout, timedOut: true });
+    }, 4000);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve({ code, stderr, stdout, timedOut: false });
+    });
+  });
 }

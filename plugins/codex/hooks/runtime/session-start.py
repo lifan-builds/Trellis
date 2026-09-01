@@ -14,6 +14,8 @@ import os
 import re
 import subprocess
 import sys
+import queue
+import threading
 import warnings
 from io import StringIO
 from pathlib import Path
@@ -209,6 +211,32 @@ def run_script(script_path: Path, context_key: str | None = None) -> str:
         return result.stdout if result.returncode == 0 else "No context available"
     except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
         return "No context available"
+
+
+def _load_hook_input() -> dict:
+    """Read hook JSON without trusting the host runner to close stdin."""
+    result_queue: "queue.Queue[str | BaseException]" = queue.Queue(maxsize=1)
+
+    def _read() -> None:
+        try:
+            result_queue.put(sys.stdin.read())
+        except BaseException as exc:
+            result_queue.put(exc)
+
+    reader = threading.Thread(target=_read, daemon=True)
+    reader.start()
+    try:
+        raw = result_queue.get(timeout=0.2)
+    except queue.Empty:
+        return {}
+
+    if isinstance(raw, BaseException):
+        return {}
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _normalize_task_ref(task_ref: str) -> str:
@@ -496,15 +524,10 @@ def main() -> None:
     if should_skip_injection():
         sys.exit(0)
 
-    # Read hook input from stdin
-    try:
-        hook_input = json.loads(sys.stdin.read())
-        if not isinstance(hook_input, dict):
-            hook_input = {}
-        project_dir = Path(_normalize_windows_shell_path(hook_input.get("cwd", "."))).resolve()
-    except (json.JSONDecodeError, KeyError):
-        hook_input = {}
-        project_dir = Path(".").resolve()
+    hook_input = _load_hook_input()
+    project_dir = Path(
+        _normalize_windows_shell_path(hook_input.get("cwd", "."))
+    ).resolve()
 
     configure_project_encoding(project_dir)
 

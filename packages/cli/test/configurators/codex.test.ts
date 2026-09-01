@@ -258,6 +258,12 @@ describe("Codex hook mode", () => {
     ).toBe("plugin");
   });
 
+  it("accepts arbitrary direct-child indentation and comments on codex", () => {
+    expect(
+      parseCodexHookMode("codex: # hook ownership\n    hook_mode: plugin\n"),
+    ).toBe("plugin");
+  });
+
   it("removes only project-local hooks in plugin mode", () => {
     const tmpDir = fs.mkdtempSync(
       path.join(os.tmpdir(), "trellis-codex-mode-"),

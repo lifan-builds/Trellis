@@ -34,13 +34,34 @@ function findTrellisRoot(start) {
 }
 
 function readInput() {
-  try {
-    const raw = fs.readFileSync(0);
-    const data = JSON.parse(raw.toString("utf8"));
-    return { data: data && typeof data === "object" ? data : {}, raw };
-  } catch {
-    return { data: {}, raw: Buffer.alloc(0) };
-  }
+  return new Promise((resolve) => {
+    const chunks = [];
+    let settled = false;
+    let timeout;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      process.stdin.off("data", onData);
+      process.stdin.off("end", finish);
+      process.stdin.pause();
+      if (timeout) clearTimeout(timeout);
+
+      const raw = Buffer.concat(chunks);
+      try {
+        const data = JSON.parse(raw.toString("utf8"));
+        resolve({ data: data && typeof data === "object" ? data : {} });
+      } catch {
+        resolve({ data: {} });
+      }
+    };
+
+    const onData = (chunk) => chunks.push(Buffer.from(chunk));
+    process.stdin.on("data", onData);
+    process.stdin.once("end", finish);
+    process.stdin.resume();
+    timeout = setTimeout(finish, 200);
+  });
 }
 
 function pythonCommands() {
@@ -49,8 +70,8 @@ function pythonCommands() {
     : ["python3", "python"];
 }
 
-function main() {
-  const { data, raw } = readInput();
+async function main() {
+  const { data } = await readInput();
   const targetConfig = TARGETS.get(data.hook_event_name);
   if (!targetConfig) return 0;
 
@@ -59,10 +80,7 @@ function main() {
   if (!root) return 0;
   const target = path.join(__dirname, "runtime", targetConfig);
   if (!isFile(target)) return 0;
-  const input =
-    typeof data.cwd === "string"
-      ? raw
-      : Buffer.from(JSON.stringify({ ...data, cwd: root }), "utf8");
+  const input = Buffer.from(JSON.stringify({ ...data, cwd: root }), "utf8");
 
   for (const command of pythonCommands()) {
     const result = spawnSync(command, [target], {
@@ -92,4 +110,6 @@ function isFile(filePath) {
   }
 }
 
-process.exitCode = main();
+main().then((status) => {
+  process.exitCode = status;
+});

@@ -28,7 +28,9 @@ warnings.filterwarnings("ignore")
 
 import json
 import os
+import queue
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -1125,16 +1127,39 @@ def _parse_hook_input(input_data: dict) -> tuple[str, str, dict]:
     return "", "", tool_input
 
 
+def _load_hook_input() -> dict:
+    """Read hook JSON without trusting host runners to close stdin."""
+    result_queue: "queue.Queue[str | BaseException]" = queue.Queue(maxsize=1)
+
+    def _read() -> None:
+        try:
+            result_queue.put(sys.stdin.read())
+        except BaseException as exc:
+            result_queue.put(exc)
+
+    reader = threading.Thread(target=_read, daemon=True)
+    reader.start()
+    try:
+        raw = result_queue.get(timeout=0.2)
+    except queue.Empty:
+        return {}
+
+    if isinstance(raw, BaseException):
+        return {}
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def main():
     """Handle one sub-agent hook invocation and fail open on malformed input."""
     if os.environ.get("TRELLIS_HOOKS") == "0" or os.environ.get("TRELLIS_DISABLE_HOOKS") == "1":
         sys.exit(0)
 
-    try:
-        input_data = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        sys.exit(0)
-    if not isinstance(input_data, dict):
+    input_data = _load_hook_input()
+    if not input_data:
         sys.exit(0)
 
     if _hook_event_name(input_data) == "SubagentStart":

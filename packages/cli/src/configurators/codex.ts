@@ -124,23 +124,35 @@ export type CodexHookMode = "project" | "plugin";
  * Unknown or malformed values keep the existing project-local hook behavior.
  */
 export function parseCodexHookMode(content: string): CodexHookMode {
-  let inCodex = false;
+  let codexIndent: number | null = null;
+  let codexChildIndent: number | null = null;
 
   for (const rawLine of content.split("\n")) {
     const line = rawLine.replace(/\r$/, "");
-    const trimmed = line.trimEnd();
-    if (trimmed === "" || trimmed.trimStart().startsWith("#")) continue;
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    const indent = line.length - line.trimStart().length;
 
-    if (/^codex:\s*$/.test(trimmed)) {
-      inCodex = true;
+    if (indent === 0 && /^codex:\s*(?:#.*)?$/.test(trimmed)) {
+      codexIndent = indent;
+      codexChildIndent = null;
       continue;
     }
-    if (!inCodex) continue;
-    if (/^\S/.test(line)) break;
+    if (codexIndent === null) continue;
+    if (indent <= codexIndent) {
+      codexIndent = null;
+      codexChildIndent = null;
+      continue;
+    }
 
-    const match = trimmed.match(/^ {2}hook_mode:\s*(.+)$/);
+    const keyMatch = trimmed.match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/);
+    if (!keyMatch) continue;
+    codexChildIndent ??= indent;
+    if (indent !== codexChildIndent || keyMatch[1] !== "hook_mode") continue;
+
+    const match = keyMatch[2];
     if (!match) continue;
-    const value = (match[1] ?? "")
+    const value = match
       .replace(/\s+#.*$/, "")
       .trim()
       .replace(/^['"]|['"]$/g, "")
