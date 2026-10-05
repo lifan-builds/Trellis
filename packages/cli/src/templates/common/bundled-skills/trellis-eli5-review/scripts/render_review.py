@@ -9,11 +9,29 @@ import os
 from pathlib import Path
 import re
 import tempfile
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 
 _LANGUAGE_SUBTAG = re.compile(r"^[A-Za-z0-9]{1,8}$")
 _LANGUAGE = re.compile(r"^[A-Za-z]{2,8}$")
+_SENSITIVE_QUERY_SUFFIXES = (
+    "accesstoken",
+    "apikey",
+    "authentication",
+    "authorization",
+    "awsaccesskeyid",
+    "credential",
+    "credentials",
+    "jwt",
+    "passwd",
+    "password",
+    "secret",
+    "session",
+    "sessionid",
+    "sig",
+    "signature",
+    "token",
+)
 
 
 def text(value: object, field: str) -> str:
@@ -74,6 +92,15 @@ def evidence_link(value: object, task: Path) -> str:
     if url.scheme:
         if url.scheme != "https" or not url.hostname or url.username or url.password:
             raise ValueError("external evidence must use HTTPS without credentials")
+        for key, _ in parse_qsl(url.query, keep_blank_values=True):
+            normalized_key = re.sub(r"[^a-z0-9]", "", key.lower())
+            if any(
+                normalized_key.endswith(suffix)
+                for suffix in _SENSITIVE_QUERY_SUFFIXES
+            ):
+                raise ValueError(
+                    "external evidence must not include credential-bearing query parameters"
+                )
     else:
         local = Path(unquote(url.path))
         if url.netloc or not url.path or local.is_absolute() or ".." in local.parts:

@@ -120,6 +120,9 @@ describe("human review rendering", () => {
     "../outside",
     "%2e%2e/outside",
     "https://user:pass@example.com",
+    "https://example.com/?access_token=secret",
+    "https://example.com/?client_secret=secret",
+    "https://example.com/?X-Amz-Signature=secret",
     "missing.md",
   ])(
     "refuses unsafe or missing evidence %s without replacing output",
