@@ -1,16 +1,18 @@
 ---
 name: trellis-eli5-review
-description: Produce task-local HTML review views at Trellis's final planning review and finish-work handoff. Summarize authoritative task evidence for human review.
+description: Produce a task-local HTML finish review at Trellis's finish-work handoff. The renderer also supports direct plan-mode input for a later integration.
 ---
 
 # Human review views
 
-Use in the main session at the existing plan and finish review points. Read
-`references/input.md` for the JSON contract. The installed skill directory
-contains `scripts/render_review.py`; resolve its path from this SKILL.md,
-not from an assumed platform directory.
+Use in the main session at the finish-work review point. The current workflow
+integration is finish-only; plan-mode integration is intentionally deferred.
+The renderer still accepts both plan and finish input for direct use and a
+future plan integration. Read `references/input.md` for the JSON contract.
+The installed skill directory contains `scripts/render_review.py`; resolve
+its path from this SKILL.md, not from an assumed platform directory.
 
-## Plan
+## Plan mode (direct renderer use)
 
 After requirements converge, read the task's `prd.md`, `design.md` and
 `implement.md` when present. Write `plan-review.json` beside them. Summarize
@@ -18,11 +20,12 @@ what changes, why, the approach, in/out scope, acceptance, and decisions or
 risks needing attention. Use a short approach sequence only when it explains
 the mechanism. Link to the detailed evidence rather than copying it.
 
-Render and present `plan-review.html` alongside the existing final planning
-summary before its approval/start transition. A generated report is not user
-approval. Update the view while planning changes; after approval preserve the
-reviewed JSON and HTML. Material replanning follows the existing re-review
-process; retain the earlier approved pair under revision-specific names first.
+Render `plan-review.html` when a caller explicitly uses plan mode. The current
+workflow does not invoke this mode at the planning entry point. A generated
+report is not user approval. If a caller uses plan mode while planning,
+preserve the reviewed JSON and HTML after approval. Material replanning follows
+the existing re-review process; retain the earlier approved pair under
+revision-specific names first.
 
 ## Finish
 
