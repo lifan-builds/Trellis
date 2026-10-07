@@ -123,6 +123,7 @@ describe("human review rendering", () => {
     "https://example.com/?access_token=secret",
     "https://example.com/?client_secret=secret",
     "https://example.com/?X-Amz-Signature=secret",
+    "https://example.com/#access_token=secret",
     "missing.md",
   ])(
     "refuses unsafe or missing evidence %s without replacing output",
@@ -150,6 +151,15 @@ describe("human review rendering", () => {
       fs.readFileSync(path.join(task, "finish-review.html"), "utf8"),
     ).toContain("Reviewed plan unavailable");
     expect(run("finish", { ...finish, deviations: [] }).status).toBe(1);
+  });
+
+  it("allows ordinary HTTPS anchors", () => {
+    expect(
+      run("plan", {
+        ...plan,
+        evidence: [{ label: "Section", href: "https://example.com/#requirements" }],
+      }).status,
+    ).toBe(0);
   });
 
   it.skipIf(process.platform === "win32")(

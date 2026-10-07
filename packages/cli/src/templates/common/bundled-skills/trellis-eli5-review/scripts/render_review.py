@@ -92,15 +92,20 @@ def evidence_link(value: object, task: Path) -> str:
     if url.scheme:
         if url.scheme != "https" or not url.hostname or url.username or url.password:
             raise ValueError("external evidence must use HTTPS without credentials")
-        for key, _ in parse_qsl(url.query, keep_blank_values=True):
-            normalized_key = re.sub(r"[^a-z0-9]", "", key.lower())
-            if any(
-                normalized_key.endswith(suffix)
-                for suffix in _SENSITIVE_QUERY_SUFFIXES
+        for component, is_fragment in ((url.query, False), (url.fragment, True)):
+            for key, parameter_value in parse_qsl(
+                component, keep_blank_values=True
             ):
-                raise ValueError(
-                    "external evidence must not include credential-bearing query parameters"
-                )
+                if is_fragment and not parameter_value:
+                    continue
+                normalized_key = re.sub(r"[^a-z0-9]", "", key.lower())
+                if any(
+                    normalized_key.endswith(suffix)
+                    for suffix in _SENSITIVE_QUERY_SUFFIXES
+                ):
+                    raise ValueError(
+                        "external evidence must not include credential-bearing URL parameters"
+                    )
     else:
         local = Path(unquote(url.path))
         if url.netloc or not url.path or local.is_absolute() or ".." in local.parts:
